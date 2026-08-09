@@ -978,67 +978,69 @@ function setupSize(size){
 function centerIdx(){var c=Math.floor(BS/2);return c*BS+c;}
 setupSize(15);
 var PAT=[
- ['XXXXXX',10000000,'five'],
- ['_XXXX_',1000000,'openfour'],
- ['X_XXXX',900000,'four'],
- ['XX_XXX',900000,'four'],
- ['XXX_XX',900000,'four'],
- ['XXXX_X',900000,'four'],
- ['XXXXX',10000000,'five'],
- ['XXXX_',120000,'four'],
- ['_XXXX',120000,'four'],
- ['XXX_X',120000,'four'],
- ['XX_XX',120000,'four'],
- ['X_XXX',120000,'four'],
- ['__XXX_',110000,'openthree'],
- ['_XXX__',110000,'openthree'],
- ['_X_XX_',110000,'openthree'],
- ['_XX_X_',110000,'openthree'],
- ['OXXX__',12000,'three'],
- ['__XXXO',12000,'three'],
- ['OX_XX_',12000,'three'],
- ['OXX_X_',12000,'three'],
- ['_XX_XO',12000,'three'],
- ['_X_XXO',12000,'three'],
- ['X__XX',12000,'three'],
- ['XX__X',12000,'three'],
- ['X_X_X',12000,'three'],
- ['__XX__',3000,'two'],
- ['_X_X_',3000,'two'],
- ['OXX___',600,'ctwo'],
- ['___XXO',600,'ctwo'],
- ['OX_X__',600,'ctwo'],
- ['__X_XO',600,'ctwo']
+ ['XXXXXX',10000000,5],
+ ['XXXXX',10000000,5],
+ ['_XXXX_',1000000,4],
+ ['X_XXXX',900000,3],
+ ['XX_XXX',900000,3],
+ ['XXX_XX',900000,3],
+ ['XXXX_X',900000,3],
+ ['XXXX_',120000,3],
+ ['_XXXX',120000,3],
+ ['XXX_X',120000,3],
+ ['XX_XX',120000,3],
+ ['X_XXX',120000,3],
+ ['__XXX_',110000,2],
+ ['_XXX__',110000,2],
+ ['_X_XX_',110000,2],
+ ['_XX_X_',110000,2],
+ ['OXXX__',12000,1],
+ ['__XXXO',12000,1],
+ ['OX_XX_',12000,1],
+ ['OXX_X_',12000,1],
+ ['_XX_XO',12000,1],
+ ['_X_XXO',12000,1],
+ ['X__XX',12000,1],
+ ['XX__X',12000,1],
+ ['X_X_X',12000,1],
+ ['__XX__',3000,1],
+ ['_X_X_',3000,1],
+ ['OXX___',600,1],
+ ['___XXO',600,1],
+ ['OX_X__',600,1],
+ ['__X_XO',600,1]
 ];
-PAT.sort(function(a,b){return b[0].length-a[0].length;});
-var board=new Uint8Array(MAXBS*MAXBS),hash=0,LS=[];
+PAT.sort(function(a,b){return b[1]-a[1];});
+var board=new Uint8Array(MAXBS*MAXBS),hash=0,LS=[],undoRec=[];
 var totScore=[0,0],totFive=[0,0],totOF=[0,0],totFour=[0,0],totOT=[0,0];
 var tt=new Map();
+var scanBuf=null;
 function scanLine(l,color){
   var cells=lineCells[l],s='OO',p,v;
   for(p=0;p<cells.length;p++){v=board[cells[p]];s+=(v===color?'X':(v===0?'_':'O'));}
   s+='OO';
-  var score=0,nFive=0,nOF=0,nF=0,nOT=0,i=0;
-  while(i<s.length){
-    var matched=false;
-    for(var k=0;k<PAT.length;k++){
-      var pat=PAT[k][0];
-      if(s.length-i<pat.length)continue;
-      var ok=true;
-      for(var j=0;j<pat.length;j++){if(s.charCodeAt(i+j)!==pat.charCodeAt(j)){ok=false;break;}}
-      if(ok){
+  var len=s.length;
+  if(!scanBuf||scanBuf.length<len)scanBuf=new Uint8Array(len+8);
+  var used=scanBuf;
+  for(p=0;p<len;p++)used[p]=0;
+  var score=0,nFive=0,nOF=0,nFour=0,nOT=0;
+  for(var k=0;k<PAT.length;k++){
+    var pat=PAT[k][0],pl=pat.length,from=0;
+    for(;;){
+      var at=s.indexOf(pat,from);
+      if(at<0)break;
+      var clash=false,q;
+      for(q=at;q<at+pl;q++){if(used[q]){clash=true;break;}}
+      if(!clash){
+        for(q=at;q<at+pl;q++)used[q]=1;
         score+=PAT[k][1];
-        var kind=PAT[k][2];
-        if(kind==='five')nFive++;
-        else if(kind==='openfour')nOF++;
-        else if(kind==='four')nF++;
-        else if(kind==='openthree')nOT++;
-        i+=pat.length-1;matched=true;break;
-      }
+        var kd=PAT[k][2];
+        if(kd===5)nFive++;else if(kd===4)nOF++;else if(kd===3)nFour++;else if(kd===2)nOT++;
+        from=at+pl;
+      }else from=at+1;
     }
-    if(!matched)i++;
   }
-  return {score:score,nFive:nFive,nOpenFour:nOF,nFour:nF,nOpenThree:nOT};
+  return {score:score,nFive:nFive,nOpenFour:nOF,nFour:nFour,nOpenThree:nOT};
 }
 function addStats(ci,st){totScore[ci]+=st.score;totFive[ci]+=st.nFive;totOF[ci]+=st.nOpenFour;totFour[ci]+=st.nFour;totOT[ci]+=st.nOpenThree;}
 function subStats(ci,st){totScore[ci]-=st.score;totFive[ci]-=st.nFive;totOF[ci]-=st.nOpenFour;totFour[ci]-=st.nFour;totOT[ci]-=st.nOpenThree;}
@@ -1048,31 +1050,47 @@ function load(arr){
   hash=0;
   for(i=0;i<n;i++){if(board[i])hash^=Z[i][board[i]];}
   totScore=[0,0];totFive=[0,0];totOF=[0,0];totFour=[0,0];totOT=[0,0];
-  LS=[];
+  LS=[];undoRec=[];
   for(var l=0;l<lineCells.length;l++){
     LS[l]=[scanLine(l,1),scanLine(l,2)];
     addStats(0,LS[l][0]);addStats(1,LS[l][1]);
   }
 }
 function make(idx,c){
-  var ci=c-1,oc=3-c,oi=oc-1,cls=cellLines[idx],k,l;
-  for(k=0;k<cls.length;k++){l=cls[k].L;subStats(ci,LS[l][ci]);subStats(oi,LS[l][oi]);}
+  var ci=c-1,oc=3-c,oi=oc-1,cls=cellLines[idx],k;
+  var rec=[idx,c];
+  for(k=0;k<cls.length;k++){
+    var l=cls[k].L;
+    rec.push(l,LS[l][ci],LS[l][oi]);
+    subStats(ci,LS[l][ci]);subStats(oi,LS[l][oi]);
+  }
   board[idx]=c;hash^=Z[idx][c];
-  for(k=0;k<cls.length;k++){l=cls[k].L;LS[l][ci]=scanLine(l,c);LS[l][oi]=scanLine(l,oc);addStats(ci,LS[l][ci]);addStats(oi,LS[l][oi]);}
+  for(k=0;k<cls.length;k++){
+    var o=2+k*3,l2=rec[o];
+    var na=scanLine(l2,c),nb=scanLine(l2,oc);
+    LS[l2][ci]=na;LS[l2][oi]=nb;
+    addStats(ci,na);addStats(oi,nb);
+  }
+  undoRec.push(rec);
 }
 function unmake(idx,c){
-  var ci=c-1,oc=3-c,oi=oc-1,cls=cellLines[idx],k,l;
-  for(k=0;k<cls.length;k++){l=cls[k].L;subStats(ci,LS[l][ci]);subStats(oi,LS[l][oi]);}
+  var rec=undoRec.pop(),ci=c-1,oc=3-c,oi=oc-1;
   board[idx]=0;hash^=Z[idx][c];
-  for(k=0;k<cls.length;k++){l=cls[k].L;LS[l][ci]=scanLine(l,c);LS[l][oi]=scanLine(l,oc);addStats(ci,LS[l][ci]);addStats(oi,LS[l][oi]);}
+  for(var k=2;k<rec.length;k+=3){
+    var l=rec[k],na=rec[k+1],nb=rec[k+2];
+    subStats(ci,LS[l][ci]);subStats(oi,LS[l][oi]);
+    LS[l][ci]=na;LS[l][oi]=nb;
+    addStats(ci,na);addStats(oi,nb);
+  }
 }
 function evaluate(color){
   var ci=color-1,oi=1-ci;
   if(totFive[ci]>0)return WINV;
   if(totFive[oi]>0)return -WINV;
-  var tc=totFour[ci]+totOF[ci]+totOT[ci];
-  var to=totFour[oi]+totOF[oi]+totOT[oi];
-  return (totScore[ci]+(tc>=2?800000:0))-(totScore[oi]+(to>=2?800000:0));
+  var s=totScore[ci]-totScore[oi];
+  if(totOF[ci]>=1||totFour[ci]>=2||(totFour[ci]>=1&&totOT[ci]>=1)||totOT[ci]>=2)s+=900000;
+  if(totOF[oi]>=1||totFour[oi]>=2||(totFour[oi]>=1&&totOT[oi]>=1)||totOT[oi]>=2)s-=900000;
+  return s;
 }
 function candidateList(){
   var n=BS*BS,set=new Uint8Array(n),any=false,out=[],i;
@@ -1095,28 +1113,58 @@ function quickGain(idx,color){
   board[idx]=0;
   return g;
 }
-function heatTop(cands,n){
-  var arr=new Array(cands.length),i;
+function shapeScore2(c,o){
+  if(c>=5)return 10000000;
+  if(c===4)return o===2?1000000:(o===1?120000:0);
+  if(c===3)return o===2?60000:(o===1?8000:0);
+  if(c===2)return o===2?1500:(o===1?250:0);
+  return o===2?60:(o===1?15:0);
+}
+function orderGain(idx,color){
+  var x=idx%BS,y=(idx/BS)|0,edge=BS-1,s=0;
+  for(var d=0;d<4;d++){
+    var dx=D4[d][0],dy=D4[d][1],cnt=1,open=0;
+    for(var sign=1;sign>=-1;sign-=2){
+      var i=1;
+      for(;;i++){
+        var nx=x+dx*i*sign,ny=y+dy*i*sign;
+        if(nx<0||ny<0||nx>edge||ny>edge)break;
+        var v=board[ny*BS+nx];
+        if(v===color)continue;
+        if(v===0)open++;
+        break;
+      }
+      cnt+=i-1;
+    }
+    s+=shapeScore2(cnt,open);
+  }
+  return s;
+}
+function tactical(idx){
+  board[idx]=1;var a=fiveAt(idx,1)||winPoints(idx,1).length>0;board[idx]=0;
+  board[idx]=2;var b=fiveAt(idx,2)||winPoints(idx,2).length>0;board[idx]=0;
+  return a||b;
+}
+function genMoves(color,K){
+  var cands=candidateList(),oc=3-color,i;
+  var heat=new Array(cands.length);
   for(i=0;i<cands.length;i++){
     var idx=cands[i],x=idx%BS,y=(idx/BS)|0,h=0;
     for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){
       if(dx||dy){var nx=x+dx,ny=y+dy;if(nx>=0&&ny>=0&&nx<BS&&ny<BS&&board[ny*BS+nx])h++;}
     }
-    arr[i]=[idx,h];
+    heat[i]=[i,h];
   }
-  arr.sort(function(a,b){return b[1]-a[1];});
-  var lim=Math.min(arr.length,n),out=new Array(lim);
-  for(i=0;i<lim;i++)out[i]=arr[i][0];
-  return out;
-}
-function genMoves(color,K){
-  var cands=heatTop(candidateList(),26),oc=3-color,i;
-  var scored=new Array(cands.length);
+  heat.sort(function(a,b){return b[1]-a[1];});
+  var inSet=new Uint8Array(cands.length),pool=[],taken=Math.min(56,heat.length);
+  for(i=0;i<taken;i++){inSet[heat[i][0]]=1;pool.push(cands[heat[i][0]]);}
   for(i=0;i<cands.length;i++){
-    var idx=cands[i];
-    board[idx]=color;var g=quickGain(idx,color);board[idx]=0;
-    board[idx]=oc;var g2=quickGain(idx,oc);board[idx]=0;
-    scored[i]=[idx,g+0.9*g2];
+    if(!inSet[i]&&tactical(cands[i]))pool.push(cands[i]);
+  }
+  var scored=new Array(pool.length);
+  for(i=0;i<pool.length;i++){
+    var id=pool[i];
+    scored[i]=[id,orderGain(id,color)+0.9*orderGain(id,oc)];
   }
   scored.sort(function(a,b){return b[1]-a[1];});
   var out=[],lim=Math.min(K,scored.length);
@@ -1157,7 +1205,13 @@ function winPoints(idx,color){
 var vcfBreadth=10;
 function vcf(color,depth,dl){
   if(depth<=0||Date.now()>dl)return -1;
-  var cands=candidateList(),arr=[],i;
+  var oc=3-color,cc=candidateList(),q;
+  for(q=0;q<cc.length;q++){
+    var cq=cc[q];
+    board[cq]=oc;var f5=fiveAt(cq,oc);board[cq]=0;
+    if(f5)return -1;
+  }
+  var cands=cc,arr=[],i;
   for(i=0;i<cands.length;i++){var idx=cands[i];board[idx]=color;var g=quickGain(idx,color);board[idx]=0;arr.push([idx,g]);}
   arr.sort(function(a,b){return b[1]-a[1];});
   var lim=Math.min(arr.length,vcfBreadth);
@@ -1187,8 +1241,9 @@ function K(ply){return ply<=2?K1:Kd;}
 function negamax(depth,alpha,beta,color,ply,extUsed){
   if((++nodes&511)===0&&Date.now()>deadline)throw ABORT;
   var alphaOrig=alpha;
-  var e=tt.get(hash);
+  var e=tt.get(hash),ttMove=-1;
   if(e&&e.depth>=depth){
+    ttMove=e.best;
     if(e.flag===0)return e.val;
     if(e.flag===1&&e.val>alpha)alpha=e.val;
     else if(e.flag===2&&e.val<beta)beta=e.val;
@@ -1197,17 +1252,20 @@ function negamax(depth,alpha,beta,color,ply,extUsed){
   if(depth<=0)return evaluate(color);
   var moves=genMoves(color,K(ply));
   if(!moves.length)return 0;
-  if(e&&e.best>=0){var bi=moves.indexOf(e.best);if(bi>0){moves.splice(bi,1);moves.unshift(e.best);}}
-  var best=-Infinity,bestMove=-1;
+  if(ttMove>=0){var bi=moves.indexOf(ttMove);if(bi>0){moves.splice(bi,1);moves.unshift(ttMove);}}
+  var best=-Infinity,bestMove=-1,oc=3-color;
   for(var i=0;i<moves.length;i++){
     var m=moves[i];
     make(m,color);
     var v;
     if(fiveAt(m,color))v=WINV-ply;
     else{
-      var ext=0;
-      if(extUsed<8&&winPoints(m,color).length>=1)ext=1;
-      v=-negamax(depth-1+ext,-beta,-alpha,3-color,ply+1,extUsed+ext);
+      var ext=(extUsed<10&&winPoints(m,color).length>=1)?1:0;
+      if(i===0)v=-negamax(depth-1+ext,-beta,-alpha,oc,ply+1,extUsed+ext);
+      else{
+        v=-negamax(depth-1+ext,-alpha-1,-alpha,oc,ply+1,extUsed+ext);
+        if(v>alpha&&v<beta&&depth>1)v=-negamax(depth-1+ext,-beta,-alpha,oc,ply+1,extUsed+ext);
+      }
     }
     unmake(m,color);
     if(v>best){best=v;bestMove=m;}
@@ -1219,17 +1277,30 @@ function negamax(depth,alpha,beta,color,ply,extUsed){
   tt.set(hash,{depth:depth,flag:flag,val:best,best:bestMove});
   return best;
 }
-function rootSearch(depth,me,Kroot){
-  var moves=genMoves(me,Kroot);
+function rootSearch(depth,me,Kroot,restrict){
+  var moves;
+  if(restrict&&restrict.length){
+    moves=restrict.slice();
+    var sc=new Array(moves.length);
+    for(var ri=0;ri<moves.length;ri++)sc[ri]=[moves[ri],orderGain(moves[ri],me)+0.9*orderGain(moves[ri],3-me)];
+    sc.sort(function(a,b){return b[1]-a[1];});
+    moves=sc.map(function(p){return p[0];});
+  }else{
+    moves=genMoves(me,Kroot);
+  }
   var e=tt.get(hash);
   if(e&&e.best>=0){var bi=moves.indexOf(e.best);if(bi>0){moves.splice(bi,1);moves.unshift(e.best);}}
-  var best=-Infinity,bestMove=-1,alpha=-10000001;
+  var best=-Infinity,bestMove=-1,alpha=-WINV-1,beta=WINV+1;
   for(var i=0;i<moves.length;i++){
     var m=moves[i];
     make(m,me);
     var v;
     if(fiveAt(m,me))v=WINV;
-    else v=-negamax(depth-1,-10000001,-alpha,3-me,1,0);
+    else if(i===0)v=-negamax(depth-1,-beta,-alpha,3-me,1,0);
+    else{
+      v=-negamax(depth-1,-alpha-1,-alpha,3-me,1,0);
+      if(v>alpha&&v<beta)v=-negamax(depth-1,-beta,-alpha,3-me,1,0);
+    }
     unmake(m,me);
     if(v>best){best=v;bestMove=m;}
     if(v>alpha)alpha=v;
@@ -1237,10 +1308,35 @@ function rootSearch(depth,me,Kroot){
   return {move:bestMove,val:best};
 }
 var LEVELS={
-  legend:{timeMs:1200,Kroot:16,K1:10,Kd:8,maxDepth:6,vcfTime:200,vcfDepth:20,vcfBreadth:10},
-  dao:{timeMs:2000,Kroot:20,K1:12,Kd:10,maxDepth:8,vcfTime:300,vcfDepth:24,vcfBreadth:12},
-  immortal:{timeMs:4000,Kroot:24,K1:16,Kd:12,maxDepth:12,vcfTime:700,vcfDepth:34,vcfBreadth:14,vcfBoth:true}
+  legend:{timeMs:1500,Kroot:14,K1:12,Kd:8,maxDepth:6,vcfTime:250,vcfDepth:20,vcfBreadth:10,defVcf:true},
+  dao:{timeMs:2600,Kroot:18,K1:14,Kd:10,maxDepth:10,vcfTime:400,vcfDepth:26,vcfBreadth:12,defVcf:true},
+  immortal:{timeMs:5000,Kroot:22,K1:18,Kd:12,maxDepth:14,vcfTime:900,vcfDepth:40,vcfBreadth:14,defVcf:true}
 };
+function defendVcf(me,opp,dl){
+  var cands=genMoves(me,20);
+  var best=-1,bestVal=-Infinity;
+  for(var i=0;i<cands.length;i++){
+    if(Date.now()>dl)break;
+    var m=cands[i];
+    make(m,me);
+    var safe=fiveAt(m,me);
+    if(!safe&&vcf(opp,12,dl)<0){
+      safe=true;
+      var cc=candidateList();
+      for(var j=0;j<cc.length;j++){
+        var q=cc[j];
+        make(q,opp);
+        var bad=totOF[opp-1]>=1||winPoints(q,opp).length>=2;
+        unmake(q,opp);
+        if(bad){safe=false;break;}
+      }
+    }
+    var val=safe?evaluate(me):-Infinity;
+    unmake(m,me);
+    if(safe&&val>bestVal){bestVal=val;best=m;}
+  }
+  return best;
+}
 function computeBest(msg){
   var me=msg.me,opp=3-me,i,idx;
   var size=msg.size||15;
@@ -1252,7 +1348,9 @@ function computeBest(msg){
   load(msg.board);
   nodes=0;
   var cands=candidateList();
+  // 直接成五
   for(i=0;i<cands.length;i++){idx=cands[i];make(idx,me);var w=fiveAt(idx,me);unmake(idx,me);if(w)return idx;}
+  // 对方成五必须堵
   var blocks=[];
   for(i=0;i<cands.length;i++){idx=cands[i];board[idx]=opp;var b=fiveAt(idx,opp);board[idx]=0;if(b)blocks.push(idx);}
   if(blocks.length===1)return blocks[0];
@@ -1261,42 +1359,48 @@ function computeBest(msg){
     for(i=0;i<blocks.length;i++){make(blocks[i],me);var bv2=evaluate(me);unmake(blocks[i],me);if(bv2>bv){bv=bv2;bb=blocks[i];}}
     return bb;
   }
+  // 己方连冲（VCF）杀
   var vm=vcf(me,cfg.vcfDepth,t0+cfg.vcfTime);
   if(vm>=0)return vm;
-  if(cfg.vcfBoth){
-    var ov=vcf(opp,cfg.vcfDepth,t0+Math.min(700,cfg.vcfTime));
+  // 造活四 / 双四：无解之着，直接下
+  for(i=0;i<cands.length;i++){
+    idx=cands[i];
+    make(idx,me);
+    var myOF=totOF[me-1]>=1,myDbl=winPoints(idx,me).length>=2;
+    unmake(idx,me);
+    if(myOF||myDbl)return idx;
+  }
+  // 对方连冲杀防守
+  if(cfg.defVcf){
+    var ov=vcf(opp,cfg.vcfDepth,t0+Math.min(900,cfg.vcfTime));
     if(ov>=0){
-      make(ov,opp);
-      var owps=winPoints(ov,opp);
-      unmake(ov,opp);
-      if(owps.length){
-        var bestBlock=owps[0],bestVal=-Infinity;
-        for(i=0;i<owps.length;i++){
-          make(owps[i],me);var val=quickGain(owps[i],me)+evaluate(me)*0.001;unmake(owps[i],me);
-          if(val>bestVal){bestVal=val;bestBlock=owps[i];}
-        }
-        var safe=true;
-        make(bestBlock,me);
-        if(fiveAt(bestBlock,me))safe=true;
-        else{
-          var oc=candidateList(),ob=0;
-          for(i=0;i<Math.min(oc.length,12);i++){
-            board[oc[i]]=opp;if(fiveAt(oc[i],opp)){ob=10000000;}
-            else{var s2=quickGain(oc[i],opp);if(s2>ob)ob=s2;}
-            board[oc[i]]=0;
-            if(ob>=10000000)break;
-          }
-          if(ob>=10000000)safe=false;
-        }
-        unmake(bestBlock,me);
-        if(safe)return bestBlock;
-      }
+      var dm=defendVcf(me,opp,t0+Math.min(1500,(cfg.timeMs/2)|0));
+      if(dm>=0)return dm;
     }
   }
+  // 威胁聚焦深搜：对方有活三时，根节点候选限定为「堵点 + 己方造四/新活三」
+  var restrict=null,otPts=[];
+  for(i=0;i<cands.length;i++){
+    idx=cands[i];
+    make(idx,opp);var of2=totOF[opp-1]>=1;unmake(idx,opp);
+    if(of2)otPts.push(idx);
+  }
+  if(otPts.length){
+    restrict=otPts.slice();
+    var baseOT=totOT[me-1];
+    for(i=0;i<cands.length&&restrict.length<28;i++){
+      idx=cands[i];
+      make(idx,me);
+      var myF=winPoints(idx,me).length>=1,myOT=totOT[me-1]>baseOT;
+      unmake(idx,me);
+      if((myF||myOT)&&restrict.indexOf(idx)<0)restrict.push(idx);
+    }
+  }
+  // 迭代加深主搜索
   var bestMove=-1;
   for(var d=2;d<=cfg.maxDepth;d+=2){
     try{
-      var r=rootSearch(d,me,cfg.Kroot);
+      var r=rootSearch(d,me,cfg.Kroot,restrict);
       if(r.move>=0)bestMove=r.move;
     }catch(ex){break;}
     if(Date.now()>deadline)break;
@@ -1345,7 +1449,7 @@ function workerReset(){
 function requestAiMove(level,cb){
   var n=N*N, boardArr=new Array(n),i;
   for(i=0;i<n;i++)boardArr[i]=state.board[i];
-  var timeMs=level==='immortal'?4000:(level==='dao'?2000:1200);
+  var timeMs=level==='immortal'?5000:(level==='dao'?2600:1500);
   if(aiWorker){
     pendingCb=cb;
     try{aiWorker.postMessage({type:'think',seq:aiSeq,board:boardArr,me:WHITE,level:level,timeMs:timeMs,size:N});}
