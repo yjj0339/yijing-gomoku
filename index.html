@@ -331,8 +331,11 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
           <input id="joinCodeInput" maxlength="6" placeholder="输入 6 位房间码" autocomplete="off" inputmode="text" />
           <button id="joinRoomBtn" class="btn" data-primary-action>加入</button>
         </div>
+        <div id="joinStatus" class="online-hint" style="display:none;color:var(--gold)"></div>
+        <button id="cancelJoinBtn" class="btn full hidden">取消加入</button>
         <p class="online-hint">
-          创建房间后把 6 位房间码发给朋友，对方打开同一网址选择「远程对战 → 输入房间码」即可加入。<br>
+          创建房间后把邀请链接发给朋友即可。<br>
+          <b style="color:var(--gold)">重要：房主在朋友加入前请保持本页面打开，不要切出去。</b><br>
           联机走浏览器点对点加密直连，无需注册。
         </p>
       </div>
@@ -353,7 +356,7 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
         <div class="panel-title">房间码</div>
         <div class="room-code" id="roomCodeLabel">------</div>
         <div class="waiting-spinner"></div>
-        <p class="online-hint" id="waitingHint">把房间码发给朋友，对方输入房间码加入后自动开始</p>
+        <p class="online-hint" id="waitingHint">复制下方邀请链接发给朋友。朋友加入前请保持本页面打开（切出去会导致房间掉线）</p>
         <button id="copyLinkBtn" class="btn full">复制邀请链接</button>
         <button id="cancelRoomBtn" class="btn full">取消房间</button>
       </div>
@@ -1621,9 +1624,44 @@ var keepAlive = {
     if(this.wakeLock){ try{this.wakeLock.release();}catch(e){} this.wakeLock=null; }
   }
 };
+/* 加入会话管理（支持长时间等待重试与随时取消） */
+var joinState={active:false,token:0,timer:null};
+function setJoinStatus(txt){
+  var el=$('joinStatus');
+  var cb=$('cancelJoinBtn');
+  if(!el) return;
+  if(txt){
+    el.textContent=txt; el.style.display='block';
+    if(cb) cb.classList.remove('hidden');
+  }else{
+    el.textContent=''; el.style.display='none';
+    if(cb) cb.classList.add('hidden');
+  }
+}
+function stopJoin(){
+  joinState.active=false; joinState.token++;
+  if(joinState.timer){ clearTimeout(joinState.timer); joinState.timer=null; }
+  setJoinStatus('');
+}
+/* 房主看门狗：等待期间每 4 秒自检房间状态，掉了自动重注册同一房间码 */
+var hostWatchTimer=null;
+function startHostWatch(){
+  stopHostWatch();
+  hostWatchTimer=setInterval(function(){
+    if(net.role!=='host'||net.open) return;
+    if(waitingScreen.classList.contains('hidden')) return;
+    if(!net.peer||net.peer.destroyed){ hostRebuild(); return; }
+    if(net.peer.disconnected){ try{net.peer.reconnect();}catch(e){} }
+  },4000);
+}
+function stopHostWatch(){
+  if(hostWatchTimer){ clearInterval(hostWatchTimer); hostWatchTimer=null; }
+}
 function netReset(){
   net.open=false; net.role=''; net.myColor=BLACK; net.code=''; net.oppGone=false;
   keepAlive.stop();
+  stopJoin();
+  stopHostWatch();
   if(net.conn){ try{net.conn.close();}catch(e){} net.conn=null; }
   if(net.peer){ try{net.peer.destroy();}catch(e){} net.peer=null; }
   updateConnPill();
@@ -1706,6 +1744,7 @@ function hostCreate(){
     settled=true; clearTimeout(to);
     $('roomCodeLabel').textContent=code;
     keepAlive.start();
+    startHostWatch();
     showScreen('waiting');
   });
   p.on('connection',function(conn){
@@ -1728,50 +1767,70 @@ function hostCreate(){
   });
   p.on('disconnected',function(){ try{p.reconnect();}catch(e){} });
 }
-function guestJoin(code,attempt){
-  attempt=attempt||0;
+function guestJoin(code){
   if(!window.Peer){ showToast('联机组件加载失败'); return; }
   ensureAudio(); sTap();
-  showToast(attempt>0?('正在重试加入（'+(attempt+1)+'/6）…'):'正在加入房间…');
-  netReset();
-  var settled=false;
-  net.role='guest'; net.myColor=WHITE; net.code=code;
-  var p=new Peer(peerOpts());
-  net.peer=p;
-  var to=setTimeout(function(){
-    if(settled) return;
-    settled=true;
-    netReset();
-    if(attempt<5){ setTimeout(function(){ guestJoin(code,attempt+1); },1800); }
-    else showToast('加入超时，请让房主回到游戏页面后重试');
-  },8000);
-  p.on('open',function(){
-    var c=p.connect(peerPrefix(code),{reliable:true,serialization:'json'});
-    bindConn(c);
-    c.on('open',function(){
+  stopJoin();
+  joinState.active=true;
+  joinState.token++;
+  var token=joinState.token;
+  var deadline=Date.now()+120000;
+  var attempt=0;
+  tryAttempt();
+
+  function tryAttempt(){
+    if(!joinState.active||joinState.token!==token) return;
+    attempt++;
+    try{ if(net.peer){net.peer.destroy();net.peer=null;} }catch(e){}
+    net.conn=null; net.open=false; net.oppGone=false;
+    net.role='guest'; net.myColor=WHITE; net.code=code;
+    var leftSec=Math.max(0,Math.ceil((deadline-Date.now())/1000));
+    setJoinStatus('正在加入房间 '+code+'（第 '+attempt+' 次尝试，最长再等 '+leftSec+' 秒）');
+    var settled=false;
+    var p=new Peer(peerOpts());
+    net.peer=p;
+    var to=setTimeout(function(){
+      if(settled) return;
+      settled=true;
+      scheduleRetry('房间响应超时');
+    },8000);
+    p.on('open',function(){
+      if(settled||!joinState.active||joinState.token!==token) return;
+      var c=p.connect(peerPrefix(code),{reliable:true,serialization:'json'});
+      bindConn(c);
+      c.on('open',function(){
+        if(settled) return;
+        settled=true; clearTimeout(to);
+        if(joinState.token===token) joinState.active=false;
+        setJoinStatus('');
+        keepAlive.start();
+      });
+    });
+    p.on('error',function(err){
+      if(settled&&net.open) return;
+      var type=err&&err.type;
       if(settled) return;
       settled=true; clearTimeout(to);
-    });
-  });
-  p.on('error',function(err){
-    var type=err&&err.type;
-    if(type==='peer-unavailable'){
-      settled=true; clearTimeout(to);
-      netReset();
-      if(attempt<5){
-        showToast('等待房间上线，自动重试中（'+(attempt+2)+'/6）…');
-        setTimeout(function(){ guestJoin(code,attempt+1); },1800);
+      if(type==='peer-unavailable'){
+        scheduleRetry('房间暂未上线');
+      }else if(type==='network'||type==='server-error'||type==='socket-error'){
+        scheduleRetry('联机服务器暂时不通');
       }else{
-        showToast('房间不在线，请确认房主已回到游戏页面');
+        scheduleRetry('连接出错');
       }
+    });
+    p.on('disconnected',function(){ try{p.reconnect();}catch(e){} });
+  }
+  function scheduleRetry(reason){
+    if(!joinState.active||joinState.token!==token) return;
+    if(Date.now()>=deadline){
+      joinState.active=false;
+      setJoinStatus('');
+      showToast('加入失败（'+reason+'）。请确认房主页面保持打开后重试');
       return;
     }
-    if(net.open) return;
-    settled=true; clearTimeout(to);
-    netReset();
-    showToast((type==='network'||type==='server-error'||type==='socket-error')?'无法连接联机服务器，请检查网络':'加入失败，请检查网络后重试');
-  });
-  p.on('disconnected',function(){ try{p.reconnect();}catch(e){} });
+    joinState.timer=setTimeout(tryAttempt,1800);
+  }
 }
 /* 用同一房间码重建房间（房主切出转发邀请、页面被系统挂起后，回来自动重注册，朋友的邀请码仍然有效） */
 function hostRebuild(attempt){
@@ -1992,6 +2051,13 @@ function bindEvents(){
     var v=($('joinCodeInput').value||'').replace(/[^2-9A-HJ-NP-Z]/gi,'').toUpperCase();
     if(v.length!==6){ showToast('请输入完整的 6 位房间码'); return; }
     guestJoin(v);
+  });
+  $('cancelJoinBtn').addEventListener('click',function(){
+    sTap();
+    stopJoin();
+    try{ if(net.peer){net.peer.destroy();net.peer=null;} }catch(e){}
+    net.conn=null; net.open=false; net.oppGone=false;
+    showToast('已取消加入');
   });
   $('joinCodeInput').addEventListener('input',function(){
     this.value=this.value.replace(/[^2-9A-HJ-NP-Z]/gi,'').toUpperCase().slice(0,6);
