@@ -1732,7 +1732,7 @@ function guestJoin(code,attempt){
   attempt=attempt||0;
   if(!window.Peer){ showToast('联机组件加载失败'); return; }
   ensureAudio(); sTap();
-  showToast(attempt>0?('正在重试加入（第 '+(attempt+1)+' 次）…'):'正在加入房间…');
+  showToast(attempt>0?('正在重试加入（'+(attempt+1)+'/6）…'):'正在加入房间…');
   netReset();
   var settled=false;
   net.role='guest'; net.myColor=WHITE; net.code=code;
@@ -1742,9 +1742,9 @@ function guestJoin(code,attempt){
     if(settled) return;
     settled=true;
     netReset();
-    if(attempt<2){ setTimeout(function(){ guestJoin(code,attempt+1); },1500); }
-    else showToast('加入超时，请核对房间码后重试');
-  },9000);
+    if(attempt<5){ setTimeout(function(){ guestJoin(code,attempt+1); },1800); }
+    else showToast('加入超时，请让房主回到游戏页面后重试');
+  },8000);
   p.on('open',function(){
     var c=p.connect(peerPrefix(code),{reliable:true,serialization:'json'});
     bindConn(c);
@@ -1758,11 +1758,11 @@ function guestJoin(code,attempt){
     if(type==='peer-unavailable'){
       settled=true; clearTimeout(to);
       netReset();
-      if(attempt<2){
-        showToast('房间暂时未响应，自动重试中…');
-        setTimeout(function(){ guestJoin(code,attempt+1); },1500);
+      if(attempt<5){
+        showToast('等待房间上线，自动重试中（'+(attempt+2)+'/6）…');
+        setTimeout(function(){ guestJoin(code,attempt+1); },1800);
       }else{
-        showToast('房间不存在或已关闭，请核对房间码');
+        showToast('房间不在线，请确认房主已回到游戏页面');
       }
       return;
     }
