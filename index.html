@@ -1586,11 +1586,6 @@ function peerOpts(){
     }
   };
 }
-function secureOK(){
-  if(window.isSecureContext) return true;
-  showToast('联机需要 HTTPS 环境，请通过部署网址访问');
-  return false;
-}
 function netReset(){
   net.open=false; net.role=''; net.myColor=BLACK; net.code=''; net.oppGone=false;
   if(net.conn){ try{net.conn.close();}catch(e){} net.conn=null; }
@@ -1655,7 +1650,6 @@ function bindConn(conn){
   });
 }
 function hostCreate(){
-  if(!secureOK()) return;
   if(!window.Peer){ showToast('联机组件加载失败'); return; }
   ensureAudio(); sTap();
   showToast('正在创建房间…');
@@ -1698,7 +1692,6 @@ function hostCreate(){
   p.on('disconnected',function(){ try{p.reconnect();}catch(e){} });
 }
 function guestJoin(code){
-  if(!secureOK()) return;
   if(!window.Peer){ showToast('联机组件加载失败'); return; }
   ensureAudio(); sTap();
   showToast('正在加入房间…');
