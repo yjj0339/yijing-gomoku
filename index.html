@@ -1586,8 +1586,44 @@ function peerOpts(){
     }
   };
 }
+/* 房间保活：静默音频防止系统冻结页面 + 屏幕常亮 + 回前台自动恢复信令 */
+var keepAlive = {
+  audioNode:null, wakeLock:null,
+  start:function(){
+    this.audio();
+    this.wake();
+  },
+  audio:function(){
+    ensureAudio();
+    if(!actx || this.audioNode) return;
+    try{
+      var len=Math.floor(actx.sampleRate);
+      var buf=actx.createBuffer(1,len,actx.sampleRate);
+      var src=actx.createBufferSource();
+      src.buffer=buf; src.loop=true;
+      var g=actx.createGain(); g.gain.value=0.001;
+      src.connect(g); g.connect(actx.destination);
+      src.start();
+      this.audioNode=src;
+    }catch(e){}
+  },
+  wake:function(){
+    if(!navigator.wakeLock) return;
+    var self=this;
+    navigator.wakeLock.request('screen').then(function(sl){
+      self.wakeLock=sl;
+      sl.addEventListener('release',function(){ self.wakeLock=null; });
+    }).catch(function(){ self.wakeLock=null; });
+  },
+  stop:function(){
+    try{ if(this.audioNode) this.audioNode.stop(); }catch(e){}
+    this.audioNode=null;
+    if(this.wakeLock){ try{this.wakeLock.release();}catch(e){} this.wakeLock=null; }
+  }
+};
 function netReset(){
   net.open=false; net.role=''; net.myColor=BLACK; net.code=''; net.oppGone=false;
+  keepAlive.stop();
   if(net.conn){ try{net.conn.close();}catch(e){} net.conn=null; }
   if(net.peer){ try{net.peer.destroy();}catch(e){} net.peer=null; }
   updateConnPill();
@@ -1669,6 +1705,7 @@ function hostCreate(){
     if(settled) return;
     settled=true; clearTimeout(to);
     $('roomCodeLabel').textContent=code;
+    keepAlive.start();
     showScreen('waiting');
   });
   p.on('connection',function(conn){
@@ -1691,10 +1728,11 @@ function hostCreate(){
   });
   p.on('disconnected',function(){ try{p.reconnect();}catch(e){} });
 }
-function guestJoin(code){
+function guestJoin(code,attempt){
+  attempt=attempt||0;
   if(!window.Peer){ showToast('联机组件加载失败'); return; }
   ensureAudio(); sTap();
-  showToast('正在加入房间…');
+  showToast(attempt>0?('正在重试加入（第 '+(attempt+1)+' 次）…'):'正在加入房间…');
   netReset();
   var settled=false;
   net.role='guest'; net.myColor=WHITE; net.code=code;
@@ -1704,8 +1742,9 @@ function guestJoin(code){
     if(settled) return;
     settled=true;
     netReset();
-    showToast('加入超时，请核对房间码后重试');
-  },12000);
+    if(attempt<2){ setTimeout(function(){ guestJoin(code,attempt+1); },1500); }
+    else showToast('加入超时，请核对房间码后重试');
+  },9000);
   p.on('open',function(){
     var c=p.connect(peerPrefix(code),{reliable:true,serialization:'json'});
     bindConn(c);
@@ -1719,7 +1758,12 @@ function guestJoin(code){
     if(type==='peer-unavailable'){
       settled=true; clearTimeout(to);
       netReset();
-      showToast('房间不存在或已关闭，请核对房间码');
+      if(attempt<2){
+        showToast('房间暂时未响应，自动重试中…');
+        setTimeout(function(){ guestJoin(code,attempt+1); },1500);
+      }else{
+        showToast('房间不存在或已关闭，请核对房间码');
+      }
       return;
     }
     if(net.open) return;
@@ -1729,6 +1773,46 @@ function guestJoin(code){
   });
   p.on('disconnected',function(){ try{p.reconnect();}catch(e){} });
 }
+/* 用同一房间码重建房间（房主切出转发邀请、页面被系统挂起后，回来自动重注册，朋友的邀请码仍然有效） */
+function hostRebuild(attempt){
+  attempt=attempt||0;
+  if(!net.code||net.open||net.role!=='host') return;
+  try{ if(net.conn){net.conn.close();net.conn=null;} }catch(e){}
+  try{ if(net.peer){net.peer.destroy();net.peer=null;} }catch(e){}
+  var code=net.code;
+  var p=new Peer(peerPrefix(code),peerOpts());
+  net.peer=p;
+  p.on('open',function(){
+    keepAlive.start();
+    if(waitingScreen&&!waitingScreen.classList.contains('hidden')){
+      $('roomCodeLabel').textContent=code;
+    }
+  });
+  p.on('connection',function(conn){
+    if(net.conn&&net.conn.open){ try{conn.close();}catch(e){} return; }
+    bindConn(conn);
+  });
+  p.on('error',function(err){
+    var type=err&&err.type;
+    if(type==='unavailable-id'&&attempt<6){
+      // 旧注册还没释放，稍后用同一个码再试
+      setTimeout(function(){ hostRebuild(attempt+1); },1500+attempt*1000);
+    }
+  });
+  p.on('disconnected',function(){ try{p.reconnect();}catch(e){} });
+}
+/* 回到前台时自动恢复（移动端切出去发邀请码、再切回来的场景） */
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState!=='visible') return;
+  keepAlive.wake();
+  keepAlive.audio();
+  if(state.mode!=='online') return;
+  if(net.role==='host'&&!net.open){
+    hostRebuild();
+  }else if(net.peer&&net.peer.disconnected){
+    try{ net.peer.reconnect(); }catch(e){}
+  }
+});
 function netMsg(d){
   switch(d.t){
     case 'start':
@@ -1918,7 +2002,8 @@ function bindEvents(){
   $('backWaiting').addEventListener('click',function(){ sTap(); netReset(); showScreen('online'); });
   $('cancelRoomBtn').addEventListener('click',function(){ sTap(); netReset(); showScreen('online'); });
   $('copyLinkBtn').addEventListener('click',function(){
-    var txt='来下棋！打开网址后点「远程对战」，输入房间码 '+net.code+'：'+location.href;
+    var link=location.href.split('?')[0].split('#')[0]+'?room='+net.code;
+    var txt='来下棋！点开链接自动加入，房间码 '+net.code+'：'+link;
     sTap();
     try{
       if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -1977,6 +2062,20 @@ renderSoundBtns();
 updateStats();
 bindEvents();
 showScreen('home');
+
+/* 邀请链接自动加入：朋友打开带 ?room=房间码 的链接，自动进入联机并发起加入 */
+(function inviteAutoJoin(){
+  try{
+    var m=location.search.match(/[?&]room=([2-9A-HJ-NP-Z]{6})/i);
+    if(!m) return;
+    var code=m[1].toUpperCase();
+    $('joinCodeInput').value=code;
+    state.mode='online'; refreshModeUI();
+    showScreen('online');
+    showToast('收到邀请，正在加入房间 '+code+'…');
+    setTimeout(function(){ guestJoin(code); },600);
+  }catch(e){}
+})();
 })();
 </script>
 </body>
