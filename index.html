@@ -1561,8 +1561,35 @@ function toggleSound(){
 function peerPrefix(code){ return 'yijing5-'+code; }
 function genCode(){
   var A='23456789ABCDEFGHJKMNPQRSTUVWXYZ', s='';
-  for(var i=0;i<6;i++) s+=A[Math.floor(Math.random()*A.length)];
+  try{
+    var rnd=new Uint8Array(6);
+    crypto.getRandomValues(rnd);
+    for(var i=0;i<6;i++) s+=A[rnd[i]%A.length];
+  }catch(e){
+    for(var j=0;j<6;j++) s+=A[Math.floor(Math.random()*A.length)];
+  }
   return s;
+}
+/* STUN 探测 + 免费 TURN 中继兜底（对称 NAT 场景也能直连） */
+function peerOpts(){
+  return {
+    debug:1,
+    config:{
+      iceServers:[
+        {urls:'stun:stun.l.google.com:19302'},
+        {urls:'stun:stun1.l.google.com:19302'},
+        {urls:'stun:stun.cloudflare.com:3478'},
+        {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+        {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+        {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
+      ]
+    }
+  };
+}
+function secureOK(){
+  if(window.isSecureContext) return true;
+  showToast('联机需要 HTTPS 环境，请通过部署网址访问');
+  return false;
 }
 function netReset(){
   net.open=false; net.role=''; net.myColor=BLACK; net.code=''; net.oppGone=false;
@@ -1605,34 +1632,6 @@ function netStartGame(){
   requestAnimationFrame(layout);
   showToast(net.myColor===BLACK?'你执黑先行':'你执白，等待对方落子');
 }
-function setupPeer(onOpen,onFail){
-  if(!window.Peer){ showToast('联机组件加载失败'); return; }
-  netReset();
-  var p=new Peer();
-  net.peer=p;
-  p.on('open',function(){ onOpen(); });
-  p.on('error',function(err){
-    var type=err&&err.type;
-    if(type==='peer-unavailable'){
-      netReset();
-      showToast('房间不存在或已关闭，请核对房间码');
-    }else if(type==='unavailable-id'){
-      netReset(); onFail();
-    }else if(net.open){
-      net.oppGone=true; net.open=false; net.conn=null;
-      updateConnPill();
-      showToast('对方连接中断，等待对方重新加入');
-      if(state.mode==='online'&&!gameScreen.classList.contains('hidden')){
-        showToast('对局已中断');
-        endGameByLeave();
-      }
-    }else{
-      netReset();
-      showToast('连接失败，请检查网络后重试');
-    }
-  });
-  p.on('disconnected',function(){ try{p.reconnect();}catch(e){} });
-}
 function bindConn(conn){
   net.conn=conn;
   conn.on('open',function(){
@@ -1656,16 +1655,25 @@ function bindConn(conn){
   });
 }
 function hostCreate(){
-  if(!location.isSecureContext){ showToast('需要 HTTPS 环境才能联机，请通过网址访问'); return; }
+  if(!secureOK()) return;
   if(!window.Peer){ showToast('联机组件加载失败'); return; }
   ensureAudio(); sTap();
   showToast('正在创建房间…');
   netReset();
-  var code=genCode();
+  var code=genCode(), settled=false;
   net.role='host'; net.myColor=BLACK; net.code=code;
-  var p=new Peer(peerPrefix(code));
+  var p=new Peer(peerPrefix(code),peerOpts());
   net.peer=p;
+  var to=setTimeout(function(){
+    if(settled) return;
+    settled=true;
+    netReset();
+    showToast('创建房间超时，请检查网络后重试');
+    showScreen('online');
+  },10000);
   p.on('open',function(){
+    if(settled) return;
+    settled=true; clearTimeout(to);
     $('roomCodeLabel').textContent=code;
     showScreen('waiting');
   });
@@ -1676,40 +1684,55 @@ function hostCreate(){
   p.on('error',function(err){
     var type=err&&err.type;
     if(type==='unavailable-id'){
+      settled=true; clearTimeout(to);
       try{p.destroy();}catch(e){}
       setTimeout(hostCreate,120);
       return;
     }
     if(net.open) return;
+    settled=true; clearTimeout(to);
     netReset();
-    showToast('创建房间失败，请检查网络后重试');
+    showToast((type==='network'||type==='server-error'||type==='socket-error')?'无法连接联机服务器，请检查网络':'创建房间失败，请检查网络后重试');
     showScreen('online');
   });
   p.on('disconnected',function(){ try{p.reconnect();}catch(e){} });
 }
 function guestJoin(code){
-  if(!location.isSecureContext){ showToast('需要 HTTPS 环境才能联机，请通过网址访问'); return; }
+  if(!secureOK()) return;
   if(!window.Peer){ showToast('联机组件加载失败'); return; }
   ensureAudio(); sTap();
   showToast('正在加入房间…');
   netReset();
+  var settled=false;
   net.role='guest'; net.myColor=WHITE; net.code=code;
-  var p=new Peer();
+  var p=new Peer(peerOpts());
   net.peer=p;
+  var to=setTimeout(function(){
+    if(settled) return;
+    settled=true;
+    netReset();
+    showToast('加入超时，请核对房间码后重试');
+  },12000);
   p.on('open',function(){
-    var c=p.connect(peerPrefix(code),{reliable:true});
+    var c=p.connect(peerPrefix(code),{reliable:true,serialization:'json'});
     bindConn(c);
+    c.on('open',function(){
+      if(settled) return;
+      settled=true; clearTimeout(to);
+    });
   });
   p.on('error',function(err){
     var type=err&&err.type;
     if(type==='peer-unavailable'){
+      settled=true; clearTimeout(to);
       netReset();
       showToast('房间不存在或已关闭，请核对房间码');
       return;
     }
     if(net.open) return;
+    settled=true; clearTimeout(to);
     netReset();
-    showToast('加入失败，请检查网络后重试');
+    showToast((type==='network'||type==='server-error'||type==='socket-error')?'无法连接联机服务器，请检查网络':'加入失败，请检查网络后重试');
   });
   p.on('disconnected',function(){ try{p.reconnect();}catch(e){} });
 }
