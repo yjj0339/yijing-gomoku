@@ -297,7 +297,14 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
           <button data-diff="hard"><b>弈圣</b><span>算无遗策</span></button>
           <button data-diff="legend"><b>弈神</b><span>深搜连冲</span></button>
           <button data-diff="dao"><b>弈道</b><span>巅峰棋力</span></button>
+          <button data-diff="immortal"><b>弈仙</b><span>无敌深搜</span></button>
         </div>
+      </div>
+
+      <h2 class="sec-title">棋盘规格</h2>
+      <div class="seg" id="sizeSeg">
+        <button data-size="15"><b>15×15</b><span>标准棋盘</span></button>
+        <button data-size="19"><b>19×19</b><span>大棋盘</span></button>
       </div>
 
       <h2 class="sec-title">棋盘风格</h2>
@@ -448,7 +455,8 @@ var DIFFS = {
   normal:{ name:'弈士', desc:'攻守均衡', delay:[380,750] },
   hard:  { name:'弈圣', desc:'算无遗策', delay:[480,900] },
   legend:{ name:'弈神', desc:'深搜+连冲杀', delay:[420,420] },
-  dao:   { name:'弈道', desc:'巅峰棋力', delay:[420,420] }
+  dao:   { name:'弈道', desc:'巅峰棋力', delay:[420,420] },
+  immortal:{ name:'弈仙', desc:'无敌 · 双向连冲', delay:[420,420] }
 };
 var THEMES = [
   { id:'wood',  name:'经典木纹', grad:['#e6b980','#cd9553','#a5692f'], line:'rgba(58,31,10,.88)',  star:'#3a2110', coord:'rgba(58,31,10,.55)',  tex:'wood',   gl:'rgba(58,31,10,.5)' },
@@ -478,7 +486,7 @@ var wrap=$('boardWrap');
 var bg=bgCv.getContext('2d'), st=stCv.getContext('2d'), fx=fxCv.getContext('2d');
 
 /* ================= 联机状态 ================= */
-var net = { peer:null, conn:null, role:'', myColor:BLACK, code:'', open:false, oppGone:false };
+var net = { peer:null, conn:null, role:'', myColor:BLACK, code:'', open:false, oppGone:false, roundNo:0 };
 var onlineEndNote = '';
 
 /* ================= 本地存储 ================= */
@@ -489,10 +497,17 @@ function loadSettings(){
     if(DIFFS[s.diff]) state.diff=s.diff;
     if(THEMES.some(function(t){return t.id===s.theme;})) state.theme=s.theme;
     if(typeof s.sound==='boolean') state.sound=s.sound;
+    if(s.size===19){ N=19; state.board=new Int8Array(N*N); }
   }catch(e){}
 }
 function saveSettings(){
-  try{ localStorage.setItem(LS_SET, JSON.stringify({mode:state.mode,diff:state.diff,theme:state.theme,sound:state.sound})); }catch(e){}
+  try{ localStorage.setItem(LS_SET, JSON.stringify({mode:state.mode,diff:state.diff,theme:state.theme,sound:state.sound,size:N})); }catch(e){}
+}
+function applySize(s){
+  s=(s===19)?19:15;
+  if(s===N&&state.board.length===N*N) return;
+  N=s;
+  state.board=new Int8Array(N*N);
 }
 function loadScores(){
   try{
@@ -548,7 +563,7 @@ function layout(){
   var w=wrap.clientWidth;
   if(!w) return;
   DPR=Math.min(window.devicePixelRatio||1,2.5);
-  S=w; cell=S/15.6; margin=(S-(N-1)*cell)/2;
+  S=w; cell=S/(N+0.6); margin=(S-(N-1)*cell)/2;
   [bgCv,stCv,fxCv].forEach(function(c){ c.width=Math.round(S*DPR); c.height=Math.round(S*DPR); });
   [bg,st,fx].forEach(function(c){ c.setTransform(DPR,0,0,DPR,0,0); });
   drawBoard(); renderStones(); drawFxStatic();
@@ -596,7 +611,9 @@ function drawBoard(){
   bg.lineWidth=Math.max(1.6,cell*0.06);
   bg.strokeRect(margin,margin,(N-1)*cell,(N-1)*cell);
   // 星位
-  var stars=[[3,3],[11,3],[3,11],[11,11],[7,7]];
+  var stars;
+  if(N===19) stars=[[3,3],[9,3],[15,3],[3,9],[9,9],[15,9],[3,15],[9,15],[15,15]];
+  else stars=[[3,3],[11,3],[3,11],[11,11],[7,7]];
   bg.fillStyle=T.star;
   for(i=0;i<stars.length;i++){
     bg.beginPath(); bg.arc(pxOf(stars[i][0]),pyOf(stars[i][1]),cell*0.11,0,Math.PI*2); bg.fill();
@@ -936,19 +953,30 @@ function engineMain(){
 var WINV=9999999,ABORT={};
 var D4=[[1,0],[0,1],[1,1],[1,-1]];
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return ((t^t>>>14)>>>0)/4294967296;};}
-var Z=[];(function(){var r=mulberry32(987654321);for(var i=0;i<225;i++){Z.push([0,(r()*4294967296)>>>0,(r()*4294967296)>>>0]);}})();
-var lineCells=[],cellLines=[];
-(function(){
+var BS=15,MAXBS=19;
+var Z=[];(function(){var r=mulberry32(987654321);for(var i=0;i<MAXBS*MAXBS;i++){Z.push([0,(r()*4294967296)>>>0,(r()*4294967296)>>>0]);}})();
+var structCache={};
+function buildStruct(size){
   var x,y,L=[];
-  for(y=0;y<15;y++){var row=[];for(x=0;x<15;x++)row.push(y*15+x);L.push(row);}
-  for(x=0;x<15;x++){var col=[];for(y=0;y<15;y++)col.push(y*15+x);L.push(col);}
-  for(var d=-10;d<=10;d++){var dg=[];for(y=0;y<15;y++){x=y+d;if(x>=0&&x<15)dg.push(y*15+x);}if(dg.length>=5)L.push(dg);}
-  for(var s=4;s<=24;s++){var ag=[];for(y=0;y<15;y++){x=s-y;if(x>=0&&x<15)ag.push(y*15+x);}if(ag.length>=5)L.push(ag);}
-  lineCells=L;
-  cellLines=new Array(225);
-  for(var i=0;i<225;i++)cellLines[i]=[];
-  for(var l=0;l<L.length;l++)for(var p=0;p<L[l].length;p++)cellLines[L[l][p]].push({L:l,p:p});
-})();
+  for(y=0;y<size;y++){var row=[];for(x=0;x<size;x++)row.push(y*size+x);L.push(row);}
+  for(x=0;x<size;x++){var col=[];for(y=0;y<size;y++)col.push(y*size+x);L.push(col);}
+  for(var d=-(size-5);d<=size-5;d++){var dg=[];for(y=0;y<size;y++){x=y+d;if(x>=0&&x<size)dg.push(y*size+x);}if(dg.length>=5)L.push(dg);}
+  for(var s=4;s<=2*(size-1)-4;s++){var ag=[];for(y=0;y<size;y++){x=s-y;if(x>=0&&x<size)ag.push(y*size+x);}if(ag.length>=5)L.push(ag);}
+  var cl=new Array(size*size);
+  for(var i=0;i<size*size;i++)cl[i]=[];
+  for(var l=0;l<L.length;l++)for(var p=0;p<L[l].length;p++)cl[L[l][p]].push({L:l,p:p});
+  return {lineCells:L,cellLines:cl};
+}
+var lineCells=[],cellLines=[];
+function setupSize(size){
+  if(size!==15&&size!==19)size=15;
+  BS=size;
+  if(!structCache[size])structCache[size]=buildStruct(size);
+  lineCells=structCache[size].lineCells;
+  cellLines=structCache[size].cellLines;
+}
+function centerIdx(){var c=Math.floor(BS/2);return c*BS+c;}
+setupSize(15);
 var PAT=[
  ['XXXXXX',10000000,'five'],
  ['_XXXX_',1000000,'openfour'],
@@ -983,7 +1011,7 @@ var PAT=[
  ['__X_XO',600,'ctwo']
 ];
 PAT.sort(function(a,b){return b[0].length-a[0].length;});
-var board=new Uint8Array(225),hash=0,LS=[];
+var board=new Uint8Array(MAXBS*MAXBS),hash=0,LS=[];
 var totScore=[0,0],totFive=[0,0],totOF=[0,0],totFour=[0,0],totOT=[0,0];
 var tt=new Map();
 function scanLine(l,color){
@@ -1015,9 +1043,10 @@ function scanLine(l,color){
 function addStats(ci,st){totScore[ci]+=st.score;totFive[ci]+=st.nFive;totOF[ci]+=st.nOpenFour;totFour[ci]+=st.nFour;totOT[ci]+=st.nOpenThree;}
 function subStats(ci,st){totScore[ci]-=st.score;totFive[ci]-=st.nFive;totOF[ci]-=st.nOpenFour;totFour[ci]-=st.nFour;totOT[ci]-=st.nOpenThree;}
 function load(arr){
-  for(var i=0;i<225;i++)board[i]=arr?arr[i]:0;
+  var n=BS*BS;
+  for(var i=0;i<n;i++)board[i]=arr?arr[i]:0;
   hash=0;
-  for(i=0;i<225;i++){if(board[i])hash^=Z[i][board[i]];}
+  for(i=0;i<n;i++){if(board[i])hash^=Z[i][board[i]];}
   totScore=[0,0];totFive=[0,0];totOF=[0,0];totFour=[0,0];totOT=[0,0];
   LS=[];
   for(var l=0;l<lineCells.length;l++){
@@ -1046,17 +1075,17 @@ function evaluate(color){
   return (totScore[ci]+(tc>=2?800000:0))-(totScore[oi]+(to>=2?800000:0));
 }
 function candidateList(){
-  var set=new Uint8Array(225),any=false,out=[],i;
-  for(i=0;i<225;i++){
+  var n=BS*BS,set=new Uint8Array(n),any=false,out=[],i;
+  for(i=0;i<n;i++){
     if(!board[i])continue;any=true;
-    var x=i%15,y=(i/15)|0;
+    var x=i%BS,y=(i/BS)|0;
     for(var dy=-2;dy<=2;dy++)for(var dx=-2;dx<=2;dx++){
       var nx=x+dx,ny=y+dy;
-      if(nx>=0&&ny>=0&&nx<15&&ny<15){var j=ny*15+nx;if(!board[j])set[j]=1;}
+      if(nx>=0&&ny>=0&&nx<BS&&ny<BS){var j=ny*BS+nx;if(!board[j])set[j]=1;}
     }
   }
-  if(!any)return [112];
-  for(i=0;i<225;i++)if(set[i])out.push(i);
+  if(!any)return [centerIdx()];
+  for(i=0;i<n;i++)if(set[i])out.push(i);
   return out;
 }
 function quickGain(idx,color){
@@ -1069,9 +1098,9 @@ function quickGain(idx,color){
 function heatTop(cands,n){
   var arr=new Array(cands.length),i;
   for(i=0;i<cands.length;i++){
-    var idx=cands[i],x=idx%15,y=(idx/15)|0,h=0;
+    var idx=cands[i],x=idx%BS,y=(idx/BS)|0,h=0;
     for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){
-      if(dx||dy){var nx=x+dx,ny=y+dy;if(nx>=0&&ny>=0&&nx<15&&ny<15&&board[ny*15+nx])h++;}
+      if(dx||dy){var nx=x+dx,ny=y+dy;if(nx>=0&&ny>=0&&nx<BS&&ny<BS&&board[ny*BS+nx])h++;}
     }
     arr[i]=[idx,h];
   }
@@ -1095,31 +1124,31 @@ function genMoves(color,K){
   return out;
 }
 function fiveAt(idx,color){
-  var x=idx%15,y=(idx/15)|0;
+  var x=idx%BS,y=(idx/BS)|0,edge=BS-1;
   for(var d=0;d<4;d++){
     var dx=D4[d][0],dy=D4[d][1],cnt=1,s;
-    for(s=1;s<5;s++){var nx=x+dx*s,ny=y+dy*s;if(nx<0||ny<0||nx>14||ny>14||board[ny*15+nx]!==color)break;cnt++;}
-    for(s=1;s<5;s++){var nx2=x-dx*s,ny2=y-dy*s;if(nx2<0||ny2<0||nx2>14||ny2>14||board[ny2*15+nx2]!==color)break;cnt++;}
+    for(s=1;s<5;s++){var nx=x+dx*s,ny=y+dy*s;if(nx<0||ny<0||nx>edge||ny>edge||board[ny*BS+nx]!==color)break;cnt++;}
+    for(s=1;s<5;s++){var nx2=x-dx*s,ny2=y-dy*s;if(nx2<0||ny2<0||nx2>edge||ny2>edge||board[ny2*BS+nx2]!==color)break;cnt++;}
     if(cnt>=5)return true;
   }
   return false;
 }
 function winPoints(idx,color){
-  var x=idx%15,y=(idx/15)|0,pts=[];
+  var x=idx%BS,y=(idx/BS)|0,edge=BS-1,pts=[];
   for(var d=0;d<4;d++){
     var dx=D4[d][0],dy=D4[d][1];
     for(var k=0;k<5;k++){
       var sx=x-dx*k,sy=y-dy*k,empt=-1,bad=false,cnt=0;
       for(var j=0;j<5;j++){
         var nx=sx+dx*j,ny=sy+dy*j;
-        if(nx<0||ny<0||nx>14||ny>14){bad=true;break;}
-        var v=board[ny*15+nx];
+        if(nx<0||ny<0||nx>edge||ny>edge){bad=true;break;}
+        var v=board[ny*BS+nx];
         if(v===color)cnt++;
         else if(v===0){if(empt!==-1){bad=true;break;}empt=j;}
         else{bad=true;break;}
       }
       if(bad||cnt!==4)continue;
-      var pidx=(sy+dy*empt)*15+(sx+dx*empt);
+      var pidx=(sy+dy*empt)*BS+(sx+dx*empt);
       if(pts.indexOf(pidx)===-1)pts.push(pidx);
     }
   }
@@ -1209,10 +1238,13 @@ function rootSearch(depth,me,Kroot){
 }
 var LEVELS={
   legend:{timeMs:1200,Kroot:16,K1:10,Kd:8,maxDepth:6,vcfTime:200,vcfDepth:20,vcfBreadth:10},
-  dao:{timeMs:2000,Kroot:20,K1:12,Kd:10,maxDepth:8,vcfTime:300,vcfDepth:24,vcfBreadth:12}
+  dao:{timeMs:2000,Kroot:20,K1:12,Kd:10,maxDepth:8,vcfTime:300,vcfDepth:24,vcfBreadth:12},
+  immortal:{timeMs:4000,Kroot:24,K1:16,Kd:12,maxDepth:12,vcfTime:700,vcfDepth:34,vcfBreadth:14,vcfBoth:true}
 };
 function computeBest(msg){
   var me=msg.me,opp=3-me,i,idx;
+  var size=msg.size||15;
+  setupSize(size);
   var cfg=LEVELS[msg.level]||LEVELS.legend;
   var t0=Date.now();
   deadline=t0+(msg.timeMs||cfg.timeMs);
@@ -1231,6 +1263,36 @@ function computeBest(msg){
   }
   var vm=vcf(me,cfg.vcfDepth,t0+cfg.vcfTime);
   if(vm>=0)return vm;
+  if(cfg.vcfBoth){
+    var ov=vcf(opp,cfg.vcfDepth,t0+Math.min(700,cfg.vcfTime));
+    if(ov>=0){
+      make(ov,opp);
+      var owps=winPoints(ov,opp);
+      unmake(ov,opp);
+      if(owps.length){
+        var bestBlock=owps[0],bestVal=-Infinity;
+        for(i=0;i<owps.length;i++){
+          make(owps[i],me);var val=quickGain(owps[i],me)+evaluate(me)*0.001;unmake(owps[i],me);
+          if(val>bestVal){bestVal=val;bestBlock=owps[i];}
+        }
+        var safe=true;
+        make(bestBlock,me);
+        if(fiveAt(bestBlock,me))safe=true;
+        else{
+          var oc=candidateList(),ob=0;
+          for(i=0;i<Math.min(oc.length,12);i++){
+            board[oc[i]]=opp;if(fiveAt(oc[i],opp)){ob=10000000;}
+            else{var s2=quickGain(oc[i],opp);if(s2>ob)ob=s2;}
+            board[oc[i]]=0;
+            if(ob>=10000000)break;
+          }
+          if(ob>=10000000)safe=false;
+        }
+        unmake(bestBlock,me);
+        if(safe)return bestBlock;
+      }
+    }
+  }
   var bestMove=-1;
   for(var d=2;d<=cfg.maxDepth;d+=2){
     try{
@@ -1239,7 +1301,7 @@ function computeBest(msg){
     }catch(ex){break;}
     if(Date.now()>deadline)break;
   }
-  if(bestMove<0){var g=genMoves(me,1);bestMove=g.length?g[0]:112;}
+  if(bestMove<0){var g=genMoves(me,1);bestMove=g.length?g[0]:centerIdx();}
   return bestMove;
 }
 self.onmessage=function(e){
@@ -1248,7 +1310,7 @@ self.onmessage=function(e){
   if(m.type==='think'){
     var idx;
     try{idx=computeBest(m);}catch(err){idx=-1;}
-    if(idx===undefined||idx===null||idx<0){var cl=candidateList();idx=cl.length?cl[0]:112;}
+    if(idx===undefined||idx===null||idx<0){var cl=candidateList();idx=cl.length?cl[0]:centerIdx();}
     self.postMessage({type:'move',seq:m.seq,index:idx});
   }
 };
@@ -1281,17 +1343,17 @@ function workerReset(){
   if(aiWorker){try{aiWorker.postMessage({type:'reset'});}catch(e){}}
 }
 function requestAiMove(level,cb){
-  var boardArr=new Array(225),i;
-  for(i=0;i<225;i++)boardArr[i]=state.board[i];
-  var timeMs=level==='dao'?2000:1200;
+  var n=N*N, boardArr=new Array(n),i;
+  for(i=0;i<n;i++)boardArr[i]=state.board[i];
+  var timeMs=level==='immortal'?4000:(level==='dao'?2000:1200);
   if(aiWorker){
     pendingCb=cb;
-    try{aiWorker.postMessage({type:'think',seq:aiSeq,board:boardArr,me:WHITE,level:level,timeMs:timeMs});}
+    try{aiWorker.postMessage({type:'think',seq:aiSeq,board:boardArr,me:WHITE,level:level,timeMs:timeMs,size:N});}
     catch(e){aiWorker=null;requestAiMove(level,cb);}
     return;
   }
   var fn=getSyncThink(),idx=-1;
-  if(fn){try{idx=fn({board:boardArr,me:WHITE,level:level,timeMs:timeMs});}catch(e){idx=-1;}}
+  if(fn){try{idx=fn({board:boardArr,me:WHITE,level:level,timeMs:timeMs,size:N});}catch(e){idx=-1;}}
   if(idx===undefined||idx===null||idx<0)idx=aiChooseMove();
   var seq=aiSeq;
   setTimeout(function(){cb(idx,seq);},30);
@@ -1299,7 +1361,7 @@ function requestAiMove(level,cb){
 function scheduleAi(){
   state.aiThinking=true; updateHud();
   var d=DIFFS[state.diff].delay;
-  if(state.diff==='legend'||state.diff==='dao'){
+  if(state.diff==='legend'||state.diff==='dao'||state.diff==='immortal'){
     var t0=performance.now(),seq=aiSeq;
     requestAiMove(state.diff,function(idx,rseq){
       if(rseq!==seq||state.over){state.aiThinking=false;updateHud();return;}
@@ -1658,7 +1720,7 @@ function stopHostWatch(){
   if(hostWatchTimer){ clearInterval(hostWatchTimer); hostWatchTimer=null; }
 }
 function netReset(){
-  net.open=false; net.role=''; net.myColor=BLACK; net.code=''; net.oppGone=false;
+  net.open=false; net.role=''; net.myColor=BLACK; net.code=''; net.oppGone=false; net.roundNo=0;
   keepAlive.stop();
   stopJoin();
   stopHostWatch();
@@ -1693,23 +1755,30 @@ function applyThemeMsg(v){
   state.theme=v; saveSettings(); applyTheme();
   showToast('房主更换了棋盘风格');
 }
-function netStartGame(){
+function restartOnlineGame(hostBlack){
+  net.myColor=(net.role==='host')?(hostBlack?BLACK:WHITE):(hostBlack?WHITE:BLACK);
   onlineEndNote='';
   resetGame();
   updateHud();
   showScreen('game');
   requestAnimationFrame(layout);
-  showToast(net.myColor===BLACK?'你执黑先行':'你执白，等待对方落子');
+  showToast(net.myColor===BLACK?'本局你执黑先行':'本局你执白，等待对方落子');
+}
+function netStartGame(){
+  if(!net.roundNo) net.roundNo=1;
+  restartOnlineGame(net.roundNo%2===1);
 }
 function bindConn(conn){
   net.conn=conn;
   conn.on('open',function(){
     net.open=true;
     if(net.role==='host'){
-      conn.send({t:'start',color:WHITE});
+      net.roundNo=1;
+      net.myColor=BLACK;
+      conn.send({t:'start',color:WHITE,size:N});
       conn.send({t:'theme',v:state.theme});
       netStartGame();
-      showToast('朋友已加入，你执黑先行');
+      showToast('朋友已加入，本局你执黑先行（每局自动换先）');
     }
     updateConnPill();
   });
@@ -1876,9 +1945,21 @@ function netMsg(d){
   switch(d.t){
     case 'start':
       if(net.role==='guest'){
+        if(d.size===19||d.size===15){ applySize(d.size); saveSettings(); }
+        net.roundNo=1;
         net.myColor=d.color||WHITE;
         netStartGame();
-        showToast('已加入，你执白');
+        showToast(net.myColor===BLACK?'已加入，本局你执黑先行':'已加入，本局你执白');
+      }
+      break;
+    case 'size':
+      if(state.mode==='online'&&net.role==='guest'&&(state.over||state.moveCount===0)){
+        var ns=(d.v===19)?19:15;
+        if(ns!==N){
+          applySize(ns); saveSettings();
+          if(!gameScreen.classList.contains('hidden')) requestAnimationFrame(layout);
+          showToast('房主切换为 '+ns+'×'+ns+' 棋盘');
+        }
       }
       break;
     case 'move':
@@ -1889,10 +1970,28 @@ function netMsg(d){
         }
       }
       break;
-    case 'restart':
+    case 'restartAsk':
       if(state.mode==='online'&&net.open){
-        hideResult(); resetGame(); updateHud();
-        showToast('对方开始了新一局');
+        if(window.confirm('对方请求开始新一局（新局自动交换先后手），同意吗？')){
+          net.roundNo++;
+          restartOnlineGame(net.roundNo%2===1);
+          netSend({t:'restartOk'});
+          showToast('新一局开始，先后手已交换');
+        }else{
+          netSend({t:'restartNo'});
+        }
+      }
+      break;
+    case 'restartOk':
+      if(state.mode==='online'&&net.open){
+        net.roundNo++;
+        restartOnlineGame(net.roundNo%2===1);
+      }
+      break;
+    case 'restartNo':
+      if(state.mode==='online'){
+        showToast('对方拒绝了重开请求');
+        if(state.over) showResult();
       }
       break;
     case 'undoAsk':
@@ -1998,6 +2097,17 @@ function bindEvents(){
       state.diff=b.dataset.diff; saveSettings(); refreshModeUI(); sTap(); vibrate(8);
     });
   });
+  // 棋盘规格
+  $('sizeSeg').querySelectorAll('button').forEach(function(b){
+    b.addEventListener('click',function(){
+      if(state.mode==='online'&&net.role==='guest'){ showToast('联机中由房主决定棋盘规格'); return; }
+      var s=(b.dataset.size==='19')?19:15;
+      if(s===N){ refreshModeUI(); return; }
+      applySize(s); saveSettings(); refreshModeUI(); sTap(); vibrate(8);
+      if(state.mode==='online'&&net.open) netSend({t:'size',v:s});
+      showToast('已切换为 '+s+'×'+s+' 棋盘');
+    });
+  });
   // 对局页
   $('backBtn').addEventListener('click',function(){
     sTap();
@@ -2016,9 +2126,8 @@ function bindEvents(){
   $('restartBtn').addEventListener('click',function(){
     if(state.mode==='online'){
       if(!net.open){ showToast('连接不可用，无法重开'); return; }
-      hideResult(); resetGame(); updateHud();
-      netSend({t:'restart'});
-      showToast('已通知对方开始新一局');
+      netSend({t:'restartAsk'});
+      showToast('已向对方发送重开请求，等待对方确认');
       return;
     }
     resetGame(); sTap(); vibrate(10); showToast('已重新开局');
@@ -2027,14 +2136,14 @@ function bindEvents(){
   $('themeClose').addEventListener('click',closeThemeSheet);
   $('themeSheet').addEventListener('click',function(e){ if(e.target===this) closeThemeSheet(); });
   $('againBtn').addEventListener('click',function(){
-    hideResult(); sTap(); vibrate(10);
+    sTap(); vibrate(10);
     if(state.mode==='online'){
       if(!net.open){ showToast('连接不可用，无法开始新局'); return; }
-      resetGame(); updateHud();
-      netSend({t:'restart'});
-      showToast('已通知对方开始新一局');
+      netSend({t:'restartAsk'});
+      showToast('已向对方发送新一局请求，等待对方确认');
       return;
     }
+    hideResult();
     resetGame();
   });
   $('homeBtn').addEventListener('click',function(){
@@ -2114,6 +2223,9 @@ function refreshModeUI(){
   });
   $('diffSeg').querySelectorAll('button').forEach(function(b){
     b.classList.toggle('sel',b.dataset.diff===state.diff);
+  });
+  $('sizeSeg').querySelectorAll('button').forEach(function(b){
+    b.classList.toggle('sel',String(N)===b.dataset.size);
   });
   $('diffBlock').classList.toggle('off',state.mode!=='ai');
 }
