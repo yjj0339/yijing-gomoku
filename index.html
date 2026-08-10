@@ -1172,7 +1172,7 @@ function evaluate(color){
   var s=totScore[ci]-totScore[oi];
   if(totOF[ci]>=1||totFour[ci]>=2||(totFour[ci]>=1&&totOT[ci]>=1)||totOT[ci]>=2)s+=900000;
   if(totOF[oi]>=1||totFour[oi]>=2||(totFour[oi]>=1&&totOT[oi]>=1)||totOT[oi]>=2)s-=900000;
-  return s+(posScore[ci]-posScore[oi])*CP;
+  return s+(posScore[ci]-posScore[oi])*CP+600;
 }
 function candidateList(){
   var n=BS*BS,set=new Uint8Array(n),any=false,out=[],i;
@@ -1341,6 +1341,27 @@ function vcf(color,depth,dl){
   return -1;
 }
 /* 防守点：穿过 idx 的 3子+2空 五连窗内的空点（对方需抢占的三防点） */
+/* 活三防守窗口：穿过 idx 的「3子+2空」五连窗内的空点 */
+function defPointsFor(idx,color){
+  var x=idx%BS,y=(idx/BS)|0,edge=BS-1,pts=[];
+  for(var d=0;d<4;d++){
+    var dx=D4[d][0],dy=D4[d][1];
+    for(var k=0;k<5;k++){
+      var sx=x-dx*k,sy=y-dy*k,empt=[],bad=false,cnt=0;
+      for(var j=0;j<5;j++){
+        var nx=sx+dx*j,ny=sy+dy*j;
+        if(nx<0||ny<0||nx>edge||ny>edge){bad=true;break;}
+        var v=board[ny*BS+nx];
+        if(v===color)cnt++;
+        else if(v===0)empt.push(ny*BS+nx);
+        else{bad=true;break;}
+      }
+      if(bad||cnt!==3)continue;
+      for(var e2=0;e2<empt.length;e2++)if(pts.indexOf(empt[e2])<0)pts.push(empt[e2]);
+    }
+  }
+  return pts;
+}
 /* VCT：冲四+活三 连续威胁取胜搜索（比 VCF 覆盖更广的组合杀） */
 var vctNodes=0;
 function vct(color,depth,dl){
@@ -1364,17 +1385,42 @@ function vct(color,depth,dl){
   for(i=0;i<lim;i++){
     vctNodes++;
     if(Date.now()>dl||vctNodes>120000)return -1;
-    var m=arr[i][0],ret=-1;
+    var m=arr[i][0],ret=-1,baseOT=totOT[color-1];
     make(m,color);
     if(fiveAt(m,color))ret=m;
     else{
       var wps=winPoints(m,color);
+      var madeOT=totOT[color-1]>baseOT;
       if(wps.length>=2)ret=m;
       else if(wps.length===1){
         var block=wps[0];
         make(block,oc);
         if(!fiveAt(block,oc)){if(vct(color,depth-2,dl)>=0)ret=m;}
         unmake(block,oc);
+      }else if(madeOT){
+        // 活三威胁：仅当对方无反四手段、且防守点可完全枚举(≤4)时才断言必胜。
+        // 对方的非强制应手（安静着/自造活三）被支配：我方后续连续冲四不给对方喘息，
+        // 该结论由递归 vct 验证；此处只枚举「堵三窗口点」。
+        var oppHasFour=false,cc2=candidateList(),ci2;
+        for(ci2=0;ci2<cc2.length;ci2++){
+          var cq2=cc2[ci2];
+          board[cq2]=oc;var cf=winPoints(cq2,oc).length>=1;board[cq2]=0;
+          if(cf){oppHasFour=true;break;}
+        }
+        if(!oppHasFour){
+          var defs=defPointsFor(m,color);
+          if(defs.length>=1&&defs.length<=4){
+            var allWin=true;
+            for(var d3=0;d3<defs.length&&allWin;d3++){
+              make(defs[d3],oc);
+              // 堵点本身若给对方带来强制威胁（成五/成四/活四），我方失先，断言不成立
+              var oppForces=fiveAt(defs[d3],oc)||winPoints(defs[d3],oc).length>=1||totOF[oc-1]>=1;
+              if(oppForces||vct(color,depth-2,dl)<0)allWin=false;
+              unmake(defs[d3],oc);
+            }
+            if(allWin)ret=m;
+          }
+        }
       }
     }
     unmake(m,color);
@@ -1469,9 +1515,9 @@ function rootSearch(depth,me,Kroot,restrict){
   return {move:bestMove,val:best,vals:rootVals};
 }
 var LEVELS={
-  legend:{timeMs:2000,Kroot:16,K1:14,Kd:10,maxDepth:8,vcfTime:300,vcfDepth:24,vcfBreadth:12,defVcf:true,vct:true,vctTime:400,vctDepth:14,diversity:true},
-  dao:{timeMs:3500,Kroot:22,K1:18,Kd:13,maxDepth:12,vcfTime:500,vcfDepth:32,vcfBreadth:14,defVcf:true,vct:true,vctTime:600,vctDepth:16,diversity:true},
-  immortal:{timeMs:6000,Kroot:26,K1:22,Kd:16,maxDepth:18,vcfTime:1200,vcfDepth:50,vcfBreadth:18,defVcf:true,vct:true,vctTime:900,vctDepth:18,diversity:true}
+  legend:{timeMs:2200,Kroot:16,K1:14,Kd:10,maxDepth:10,vcfTime:300,vcfDepth:28,vcfBreadth:12,defVcf:true,vct:true,vctTime:400,vctDepth:14,diversity:true},
+  dao:{timeMs:4500,Kroot:22,K1:18,Kd:13,maxDepth:14,vcfTime:500,vcfDepth:38,vcfBreadth:14,defVcf:true,vct:true,vctTime:600,vctDepth:16,diversity:true},
+  immortal:{timeMs:8000,Kroot:26,K1:22,Kd:18,maxDepth:24,vcfTime:1200,vcfDepth:60,vcfBreadth:18,defVcf:true,vct:true,vctTime:900,vctDepth:18,diversity:true}
 };
 function defendVcf(me,opp,dl){
   // 防守点分级：①对方成五点(必堵) ②对方活四/双四成形点(抢先占据) ③已成形四的堵点 ④热点兜底；
@@ -1569,12 +1615,23 @@ function computeBest(msg){
       if(dm>=0)return dm;
     }
   }
-  // 威胁聚焦深搜：对方有活三时，根节点候选限定为「堵点 + 己方造四/新活三」
+  // 威胁聚焦深搜：对方能造活四 或 已有活三时，根节点候选限定为「堵点/防三延伸点 + 己方造四/新活三」
   var restrict=null,otPts=[];
   for(i=0;i<cands.length;i++){
     idx=cands[i];
     make(idx,opp);var of2=totOF[opp-1]>=1;unmake(idx,opp);
     if(of2)otPts.push(idx);
+  }
+  // 对方已有活三：把该活三的两个延伸点（将被连成活四的位置）也视为必防点
+  if(totOT[opp-1]>=1){
+    var threeDef=candidateList(),td;
+    for(td=0;td<threeDef.length;td++){
+      var tp=threeDef[td];
+      make(tp,opp);
+      var madeOTFour=totOF[opp-1]>=1||winPoints(tp,opp).length>=2;
+      unmake(tp,opp);
+      if(madeOTFour&&otPts.indexOf(tp)<0)otPts.push(tp);
+    }
   }
   if(otPts.length){
     restrict=otPts.slice();
@@ -1596,11 +1653,11 @@ function computeBest(msg){
     }catch(ex){break;}
     if(Date.now()>deadline)break;
   }
-  // 去模板化择优：仅在开局/早中盘（盘面子数≤24）、完成足够深度搜索、局面真正均衡（|最优值|≤15000）时，
+  // 去模板化择优：仅在开局/早中盘（盘面子数≤32）、完成足够深度搜索、局面真正均衡（|最优值|≤15000）时，
   // 从「搜索值与最优相差≤1500」的前2个近优着法中按造势价值加权随机挑选，打破固定套路；
   // 中后盘/防守/杀着/败势局面一律走纯搜索最优，绝不牺牲正确性
   var stoneCnt=0;for(i=0;i<BS*BS;i++)if(board[i])stoneCnt++;
-  if(cfg.diversity&&budget>=2000&&lastVals&&lastVals.length>1&&lastDepth>=4&&stoneCnt<=24){
+  if(cfg.diversity&&budget>=2000&&lastVals&&lastVals.length>1&&lastDepth>=4&&stoneCnt<=32){
     var topV=-Infinity,ri2;
     for(ri2=0;ri2<lastVals.length;ri2++)if(lastVals[ri2][1]>topV)topV=lastVals[ri2][1];
     if(Math.abs(topV)<=15000){
@@ -1671,7 +1728,7 @@ function workerReset(){
 function requestAiMove(level,cb){
   var n=N*N, boardArr=new Array(n),i;
   for(i=0;i<n;i++)boardArr[i]=state.board[i];
-  var timeMs=level==='immortal'?6000:(level==='dao'?3500:2000);
+  var timeMs=level==='immortal'?8000:(level==='dao'?4500:2200);
   if(aiWorker){
     pendingCb=cb;
     try{aiWorker.postMessage({type:'think',seq:aiSeq,board:boardArr,me:aiColor(),level:level,timeMs:timeMs,size:N});}
