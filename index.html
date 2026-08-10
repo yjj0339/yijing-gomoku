@@ -1032,6 +1032,7 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a
 var BS=15,MAXBS=19;
 var Z=[];(function(){var r=mulberry32(987654321);for(var i=0;i<MAXBS*MAXBS;i++){Z.push([0,(r()*4294967296)>>>0,(r()*4294967296)>>>0]);}})();
 var structCache={};
+var posScore=[0,0],hist=new Float64Array(2*MAXBS*MAXBS),POS_W=new Int8Array(MAXBS*MAXBS),CP=12;
 function buildStruct(size){
   var x,y,L=[];
   for(y=0;y<size;y++){var row=[];for(x=0;x<size;x++)row.push(y*size+x);L.push(row);}
@@ -1050,6 +1051,8 @@ function setupSize(size){
   if(!structCache[size])structCache[size]=buildStruct(size);
   lineCells=structCache[size].lineCells;
   cellLines=structCache[size].cellLines;
+  var c=(size/2)|0,px,py;
+  for(py=0;py<size;py++)for(px=0;px<size;px++){POS_W[py*size+px]=Math.max(0,c-Math.max(Math.abs(px-c),Math.abs(py-c)));}
 }
 function centerIdx(){var c=Math.floor(BS/2);return c*BS+c;}
 setupSize(15);
@@ -1126,6 +1129,7 @@ function load(arr){
   hash=0;
   for(i=0;i<n;i++){if(board[i])hash^=Z[i][board[i]];}
   totScore=[0,0];totFive=[0,0];totOF=[0,0];totFour=[0,0];totOT=[0,0];
+  posScore[0]=0;posScore[1]=0;hist.fill(0);
   LS=[];undoRec=[];
   for(var l=0;l<lineCells.length;l++){
     LS[l]=[scanLine(l,1),scanLine(l,2)];
@@ -1134,6 +1138,7 @@ function load(arr){
 }
 function make(idx,c){
   var ci=c-1,oc=3-c,oi=oc-1,cls=cellLines[idx],k;
+  posScore[ci]+=POS_W[idx];
   var rec=[idx,c];
   for(k=0;k<cls.length;k++){
     var l=cls[k].L;
@@ -1151,6 +1156,7 @@ function make(idx,c){
 }
 function unmake(idx,c){
   var rec=undoRec.pop(),ci=c-1,oc=3-c,oi=oc-1;
+  posScore[ci]-=POS_W[idx];
   board[idx]=0;hash^=Z[idx][c];
   for(var k=2;k<rec.length;k+=3){
     var l=rec[k],na=rec[k+1],nb=rec[k+2];
@@ -1166,7 +1172,7 @@ function evaluate(color){
   var s=totScore[ci]-totScore[oi];
   if(totOF[ci]>=1||totFour[ci]>=2||(totFour[ci]>=1&&totOT[ci]>=1)||totOT[ci]>=2)s+=900000;
   if(totOF[oi]>=1||totFour[oi]>=2||(totFour[oi]>=1&&totOT[oi]>=1)||totOT[oi]>=2)s-=900000;
-  return s;
+  return s+(posScore[ci]-posScore[oi])*CP;
 }
 function candidateList(){
   var n=BS*BS,set=new Uint8Array(n),any=false,out=[],i;
@@ -1216,6 +1222,28 @@ function orderGain(idx,color){
   }
   return s;
 }
+/* 缺口棋形：识别跳四（四子+一空窗）与断三，用于着法排序（单趟扫描双色） */
+function gapScores(idx){
+  var x=idx%BS,y=(idx/BS)|0,edge=BS-1,gA=0,gB=0,d,k;
+  for(d=0;d<4;d++){
+    var dx=D4[d][0],dy=D4[d][1];
+    for(k=0;k<5;k++){
+      var sx=x-dx*k,sy=y-dy*k,nX=0,nO=0,nE=0,j;
+      for(j=0;j<5;j++){
+        var nx=sx+dx*j,ny=sy+dy*j;
+        if(nx<0||ny<0||nx>edge||ny>edge){nO=-9;break;}
+        var v=board[ny*BS+nx];
+        if(v===1)nX++;else if(v===2)nO++;else nE++;
+      }
+      if(nO<0)continue;
+      if(nX===4&&nE===1)gA+=900000;
+      if(nO===4&&nE===1)gB+=900000;
+      if(nX===3&&nE===1&&nO===0)gA+=4000;
+      if(nO===3&&nE===1&&nX===0)gB+=4000;
+    }
+  }
+  return [gA,gB];
+}
 function tactical(idx){
   board[idx]=1;var a=fiveAt(idx,1)||winPoints(idx,1).length>0;board[idx]=0;
   board[idx]=2;var b=fiveAt(idx,2)||winPoints(idx,2).length>0;board[idx]=0;
@@ -1239,8 +1267,8 @@ function genMoves(color,K){
   }
   var scored=new Array(pool.length);
   for(i=0;i<pool.length;i++){
-    var id=pool[i];
-    scored[i]=[id,orderGain(id,color)+0.9*orderGain(id,oc)];
+    var id=pool[i],gp=gapScores(id);
+    scored[i]=[id,orderGain(id,color)+0.9*orderGain(id,oc)+gp[color-1]+0.7*gp[2-color]+hist[(color-1)*MAXBS*MAXBS+id]*2];
   }
   scored.sort(function(a,b){return b[1]-a[1];});
   var out=[],lim=Math.min(K,scored.length);
@@ -1346,7 +1374,7 @@ function negamax(depth,alpha,beta,color,ply,extUsed){
     unmake(m,color);
     if(v>best){best=v;bestMove=m;}
     if(v>alpha)alpha=v;
-    if(alpha>=beta)break;
+    if(alpha>=beta){hist[(color-1)*MAXBS*MAXBS+m]+=depth*depth;break;}
   }
   var flag=best<=alphaOrig?2:(best>=beta?1:0);
   if(tt.size>300000)tt.clear();
@@ -1358,7 +1386,10 @@ function rootSearch(depth,me,Kroot,restrict){
   if(restrict&&restrict.length){
     moves=restrict.slice();
     var sc=new Array(moves.length);
-    for(var ri=0;ri<moves.length;ri++)sc[ri]=[moves[ri],orderGain(moves[ri],me)+0.9*orderGain(moves[ri],3-me)];
+    for(var ri=0;ri<moves.length;ri++){
+      var gp0=gapScores(moves[ri]);
+      sc[ri]=[moves[ri],orderGain(moves[ri],me)+0.9*orderGain(moves[ri],3-me)+gp0[me-1]+0.7*gp0[2-me]+hist[(me-1)*MAXBS*MAXBS+moves[ri]]*2];
+    }
     sc.sort(function(a,b){return b[1]-a[1];});
     moves=sc.map(function(p){return p[0];});
   }else{
@@ -1381,12 +1412,13 @@ function rootSearch(depth,me,Kroot,restrict){
     if(v>best){best=v;bestMove=m;}
     if(v>alpha)alpha=v;
   }
+  if(bestMove>=0)hist[(me-1)*MAXBS*MAXBS+bestMove]+=depth*depth*2;
   return {move:bestMove,val:best};
 }
 var LEVELS={
   legend:{timeMs:2000,Kroot:16,K1:14,Kd:10,maxDepth:8,vcfTime:300,vcfDepth:24,vcfBreadth:12,defVcf:true},
-  dao:{timeMs:3500,Kroot:20,K1:16,Kd:12,maxDepth:12,vcfTime:500,vcfDepth:30,vcfBreadth:14,defVcf:true},
-  immortal:{timeMs:6000,Kroot:24,K1:20,Kd:14,maxDepth:16,vcfTime:1000,vcfDepth:44,vcfBreadth:16,defVcf:true}
+  dao:{timeMs:3500,Kroot:22,K1:18,Kd:13,maxDepth:12,vcfTime:500,vcfDepth:32,vcfBreadth:14,defVcf:true},
+  immortal:{timeMs:6000,Kroot:26,K1:22,Kd:16,maxDepth:18,vcfTime:1200,vcfDepth:50,vcfBreadth:18,defVcf:true}
 };
 function defendVcf(me,opp,dl){
   var cands=genMoves(me,20);
