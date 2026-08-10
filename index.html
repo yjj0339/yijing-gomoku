@@ -15,7 +15,32 @@
   --acc-hi:#f7e3a8; --acc-lo:#a9812f;
   --text:#eef1f6; --sub:#98a2b3;
   --r-lg:20px; --r-md:14px;
+  --mask:rgba(6,9,15,.6);
+  --glass:rgba(20,27,42,.66); --glass-strong:rgba(20,27,42,.92);
+  --glass-card:rgba(20,27,42,.94); --glass-card2:rgba(20,27,42,.7);
+  --panel-card-bg:rgba(255,255,255,.06);
+  --input-bg:rgba(0,0,0,.25);
+  --board-shadow:0 24px 60px rgba(0,0,0,.5),0 4px 14px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.06);
 }
+:root[data-skin="light"]{
+  --bg0:#f2f4f9; --bg1:#e9edf5;
+  --panel:rgba(25,35,70,.06); --panel2:rgba(25,35,70,.11);
+  --line:rgba(25,35,70,.14);
+  --text:#1d2534; --sub:#5f6b84;
+  --gold:#a9812f; --gold-deep:#7c5d1c; --acc-hi:#8a6a1f;
+  --mask:rgba(226,232,244,.62);
+  --glass:rgba(255,255,255,.72); --glass-strong:rgba(255,255,255,.94);
+  --glass-card:rgba(255,255,255,.96); --glass-card2:rgba(255,255,255,.82);
+  --panel-card-bg:rgba(255,255,255,.55);
+  --input-bg:rgba(255,255,255,.65);
+  --board-shadow:0 20px 48px rgba(30,45,90,.18),0 4px 12px rgba(30,45,90,.12),inset 0 0 0 1px rgba(0,0,0,.05);
+}
+:root[data-skin="light"]{
+  --acc-rgb:169,129,47; --gold-ink:#ffffff;
+}
+:root[data-skin="light"][data-accent="blue"]{ --acc-rgb:47,102,179; --gold:#2f66b3; --gold-deep:#24508f; --acc-hi:#245a9e; --acc-lo:#2f66b3; }
+:root[data-skin="light"][data-accent="purple"]{ --acc-rgb:124,63,192; --gold:#7c3fc0; --gold-deep:#63309c; --acc-hi:#6d35aa; --acc-lo:#7c3fc0; }
+:root[data-skin="light"][data-accent="green"]{ --acc-rgb:34,130,90; --gold:#22825a; --gold-deep:#1a6647; --acc-hi:#1d7350; --acc-lo:#22825a; }
 :root[data-accent="blue"]{
   --acc-rgb:125,180,255; --gold:#7db4ff; --gold-deep:#3a72c4; --gold-ink:#081428;
   --acc-hi:#d6e9ff; --acc-lo:#3a72c4;
@@ -35,6 +60,7 @@ body{
   background:var(--bg0);color:var(--text);
   overscroll-behavior:none;touch-action:manipulation;
   -webkit-user-select:none;user-select:none;
+  transition:background .35s ease,color .35s ease;
 }
 body::before,body::after{
   content:'';position:fixed;pointer-events:none;z-index:0;border-radius:50%;filter:blur(10px);
@@ -162,7 +188,7 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
   position:relative;border-radius:10px;overflow:hidden;
   width:min(94vw,560px,max(230px,calc(100dvh - 288px)));
   aspect-ratio:1/1;
-  box-shadow:0 24px 60px rgba(0,0,0,.5),0 4px 14px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.06);
+  box-shadow:var(--board-shadow);
 }
 .board-wrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 #fxCanvas{touch-action:none;cursor:pointer}
@@ -182,12 +208,12 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 /* ---------- 弹层 ---------- */
 .sheet-mask,.overlay{
   position:fixed;inset:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;
-  background:rgba(6,9,15,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  background:var(--mask);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
   opacity:1;transition:opacity .25s;
 }
 .sheet{
   width:100%;max-width:640px;margin:0 auto;
-  background:rgba(20,27,42,.92);border:1px solid var(--line);border-bottom:none;
+  background:var(--glass-strong);border:1px solid var(--line);border-bottom:none;
   border-radius:22px 22px 0 0;padding:20px 18px calc(22px + env(safe-area-inset-bottom));
   transform:translateY(0);transition:transform .3s cubic-bezier(.32,.72,.33,1);
 }
@@ -200,7 +226,7 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 .overlay{align-items:center;padding:24px}
 .result-card{
   width:100%;max-width:360px;text-align:center;
-  background:rgba(20,27,42,.94);border:1px solid rgba(var(--acc-rgb),.28);border-radius:24px;
+  background:var(--glass-card);border:1px solid rgba(var(--acc-rgb),.28);border-radius:24px;
   padding:34px 24px 26px;box-shadow:0 30px 80px rgba(0,0,0,.55);
 }
 .overlay.show .result-card{animation:pop .42s cubic-bezier(.34,1.56,.64,1)}
@@ -219,7 +245,7 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 
 #toast{
   position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(16px);
-  background:rgba(20,27,42,.94);border:1px solid var(--line);color:var(--text);
+  background:var(--glass-card);border:1px solid var(--line);color:var(--text);
   padding:10px 18px;border-radius:99px;font-size:13px;letter-spacing:1px;
   opacity:0;pointer-events:none;transition:.3s;z-index:80;white-space:nowrap;
 }
@@ -237,10 +263,10 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 .join-row{display:flex;gap:10px}
 .join-row input{
   flex:1;min-width:0;height:50px;border-radius:var(--r-md);border:1.5px solid var(--line);
-  background:rgba(0,0,0,.25);color:var(--gold);font-size:22px;letter-spacing:10px;text-align:center;
+  background:var(--input-bg);color:var(--gold);font-size:22px;letter-spacing:10px;text-align:center;
   outline:none;font-family:inherit;transition:border-color .2s;
 }
-.join-row input::placeholder{color:rgba(152,162,179,.5);font-size:14px;letter-spacing:1px}
+.join-row input::placeholder{color:rgba(var(--acc-rgb),.35);font-size:14px;letter-spacing:1px}
 .join-row input:focus{border-color:var(--gold)}
 .join-row .btn{flex:none;width:96px;font-size:15px}
 .online-hint{font-size:12px;color:var(--sub);line-height:1.7;letter-spacing:1px;text-align:center}
@@ -258,7 +284,7 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 .conn-pill{
   position:fixed;top:calc(52px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
   z-index:40;display:none;align-items:center;gap:7px;padding:6px 14px;border-radius:99px;
-  background:rgba(20,27,42,.94);border:1px solid var(--line);font-size:12px;letter-spacing:1px;
+  background:var(--glass-card);border:1px solid var(--line);font-size:12px;letter-spacing:1px;
 }
 .conn-pill.show{display:flex}
 .conn-dot{width:8px;height:8px;border-radius:50%;background:#7fd67f;box-shadow:0 0 8px #7fd67f}
@@ -272,11 +298,11 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
   backdrop-filter:blur(14px) saturate(1.5);
   -webkit-backdrop-filter:blur(14px) saturate(1.5);
 }
-.sheet{background:rgba(20,27,42,.66)}
-.result-card{background:rgba(20,27,42,.7)}
-#toast{background:rgba(20,27,42,.7)}
-.conn-pill{background:rgba(20,27,42,.7)}
-.panel-card{background:rgba(255,255,255,.06)}
+.sheet{background:var(--glass)}
+.result-card{background:var(--glass-card2)}
+#toast{background:var(--glass-card2)}
+.conn-pill{background:var(--glass-card2)}
+.panel-card{background:var(--panel-card-bg)}
 
 /* ---------- 动效 ---------- */
 @keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
@@ -290,6 +316,7 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 .home-body>*:nth-child(7){animation-delay:.32s}
 .home-body>*:nth-child(8){animation-delay:.37s}
 .home-body>*:nth-child(9){animation-delay:.42s}
+.home-body>*:nth-child(10){animation-delay:.47s}
 @keyframes shimmer{0%{background-position:0% 50%}100%{background-position:200% 50%}}
 .hero h1{background-size:200% auto;animation:shimmer 4s linear infinite}
 @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
@@ -306,6 +333,7 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 .acc-dot{width:38px;height:38px;border-radius:50%;border:2px solid var(--line);transition:.2s}
 .acc-dot:active{transform:scale(.92)}
 .acc-dot.sel{border-color:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.14),0 0 14px rgba(255,255,255,.15)}
+:root[data-skin="light"] .acc-dot.sel{border-color:var(--gold);box-shadow:0 0 0 3px rgba(var(--acc-rgb),.18),0 0 14px rgba(var(--acc-rgb),.25)}
 
 @media (min-width:560px){
   .swatch-grid{gap:14px}
@@ -336,7 +364,7 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
         </button>
         <button class="mode-card" data-mode="ai">
           <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M12 7V4M9.5 4h5"/><circle cx="9.3" cy="12" r="1.1" fill="currentColor"/><circle cx="14.7" cy="12" r="1.1" fill="currentColor"/><path d="M9.5 15.2h5"/></svg></span>
-          <b>人机对弈</b><span>挑战本地 AI 棋手，五档棋力逐级进阶</span>
+          <b>人机对弈</b><span>挑战本地 AI 棋手，六档棋力逐级进阶</span>
         </button>
         <button class="mode-card" data-mode="online">
           <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></span>
@@ -372,6 +400,12 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 
       <h2 class="sec-title">界面主题色</h2>
       <div class="acc-grid" id="accGrid"></div>
+
+      <h2 class="sec-title">界面风格 <small>亮色 / 暗色</small></h2>
+      <div class="seg" id="skinSeg">
+        <button data-skin="light"><b>明亮</b><span>清爽白底</span></button>
+        <button data-skin="dark"><b>暗夜</b><span>沉浸深色</span></button>
+      </div>
 
       <div class="stats">
         <div><b id="statPvp">0 · 0 · 0</b><span>双人 · 黑 / 白 / 和</span></div>
@@ -477,6 +511,10 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 9.2h17M3.5 14.8h17M9.2 3.5v17M14.8 3.5v17"/></svg>
         棋盘
       </button>
+      <button id="moveNoBtn" class="btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M9 9.5c.5-1 1.6-1.5 3-1.5 1.7 0 3 1 3 2.4 0 2.6-5.7 2-5.7 4.6 0 1.4 1.2 2.2 2.7 2.2 1.3 0 2.3-.5 2.9-1.4"/></svg>
+        手数
+      </button>
     </div>
   </section>
 
@@ -534,7 +572,8 @@ var THEMES = [
   { id:'bamboo',name:'竹青',     grad:['#9cc5a8','#7fb28f','#5d9273'], line:'rgba(23,52,35,.85)',  star:'#1e4630', coord:'rgba(23,52,35,.6)',   tex:'bamboo', gl:'rgba(23,52,35,.5)' },
   { id:'night', name:'暗夜星河', grad:['#252c3e','#171d2d','#0d1120'], line:'rgba(190,205,235,.42)', star:'#d9b96a', coord:'rgba(190,205,235,.45)', tex:'night', gl:'rgba(190,205,235,.4)' },
   { id:'sakura',name:'樱雨粉黛', grad:['#f6dbe4','#f0cdd9','#e7b9c9'], line:'rgba(122,58,80,.6)', star:'#b34a6b', coord:'rgba(122,58,80,.55)', tex:'paper', gl:'rgba(122,58,80,.5)' },
-  { id:'xuanjin',name:'玄金夜弈', grad:['#262019','#1a1512','#0f0c09'], line:'rgba(227,193,104,.45)', star:'#e3c168', coord:'rgba(227,193,104,.5)', tex:'wood', gl:'rgba(227,193,104,.4)' }
+  { id:'xuanjin',name:'玄金夜弈', grad:['#262019','#1a1512','#0f0c09'], line:'rgba(227,193,104,.45)', star:'#e3c168', coord:'rgba(227,193,104,.5)', tex:'wood', gl:'rgba(227,193,104,.4)' },
+  { id:'cloud', name:'云白天青', grad:['#fbfcfe','#eef2f7','#dde5ef'], line:'rgba(60,80,120,.5)',  star:'#3f5c92', coord:'rgba(60,80,120,.55)', tex:'paper', gl:'rgba(60,80,120,.4)' }
 ];
 var WIN_LINES = ['五子连珠，一气呵成','步步为营，锁定胜局','妙手连珠，势如破竹','落子无悔，胜天半目'];
 var LOSE_LINES = ['AI 棋高一着，再战一回','这一局 AI 占了上风','稳住心态，下一局翻盘'];
@@ -543,7 +582,7 @@ var ACCENTS = ['gold','blue','purple','green'];
 
 /* ================= 状态 ================= */
 var state = {
-  mode:'ai', diff:'normal', theme:'wood', sound:true, side:'black', accent:'gold',
+  mode:'ai', diff:'normal', theme:'wood', sound:true, side:'black', accent:'gold', skin:'light',
   board:new Int8Array(N*N), history:[], turn:BLACK, moveCount:0,
   over:false, winner:0, winCells:null, aiThinking:false,
   scores:{ pvp:{black:0,white:0,draw:0}, ai:{win:0,lose:0,draw:0}, net:{win:0,lose:0,draw:0} }
@@ -573,11 +612,13 @@ function loadSettings(){
     if(typeof s.sound==='boolean') state.sound=s.sound;
     if(s.side==='white'||s.side==='black') state.side=s.side;
     if(ACCENTS.indexOf(s.accent)>=0) state.accent=s.accent;
+    if(s.skin==='light'||s.skin==='dark') state.skin=s.skin;
+    if(typeof s.moveNo==='boolean') showMoveNo=s.moveNo;
     if(s.size===19){ N=19; state.board=new Int8Array(N*N); }
   }catch(e){}
 }
 function saveSettings(){
-  try{ localStorage.setItem(LS_SET, JSON.stringify({mode:state.mode,diff:state.diff,theme:state.theme,sound:state.sound,size:N,side:state.side,accent:state.accent})); }catch(e){}
+  try{ localStorage.setItem(LS_SET, JSON.stringify({mode:state.mode,diff:state.diff,theme:state.theme,sound:state.sound,size:N,side:state.side,accent:state.accent,skin:state.skin,moveNo:showMoveNo})); }catch(e){}
 }
 function applySize(s){
   s=(s===19)?19:15;
@@ -791,6 +832,7 @@ function drawStone(ctx,x,y,r,color,scale,alpha){
   ctx.restore();
 }
 var drops=[], ripples=[], particles=[], winFx=null, ghost=null, fxRunning=false;
+var showMoveNo=false;
 function easeOutCubic(t){ return 1-Math.pow(1-t,3); }
 function easeOutBack(t){ var c1=1.70158,c3=c1+1; return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2); }
 
@@ -805,14 +847,25 @@ function renderStones(now){
       scaleMap[drops[d].i]=1.6-0.6*easeOutBack(t);
     }
   }
+  var moveNoMap=null;
+  if(showMoveNo){
+    moveNoMap={};
+    for(var h=0;h<state.history.length;h++)moveNoMap[idxOf(state.history[h].x,state.history[h].y)]=h+1;
+  }
   for(var i=0;i<N*N;i++){
     var v=state.board[i];
     if(!v) continue;
     var sc=(scaleMap&&scaleMap[i])?scaleMap[i]:1;
     drawStone(st, pxOf(i%N), pyOf(Math.floor(i/N)), cell*0.44, v, sc);
+    if(moveNoMap&&moveNoMap[i]){
+      st.fillStyle=(v===BLACK)?'rgba(255,255,255,.92)':'rgba(20,25,35,.85)';
+      st.font='700 '+Math.max(8,cell*0.3).toFixed(1)+'px system-ui,sans-serif';
+      st.textAlign='center'; st.textBaseline='middle';
+      st.fillText(String(moveNoMap[i]),pxOf(i%N),pyOf(Math.floor(i/N))+0.5);
+    }
   }
   var last=state.history[state.history.length-1];
-  if(last && !state.over){
+  if(last && !state.over && !showMoveNo){
     st.fillStyle='rgba('+accRGB+',1)';
     st.beginPath(); st.arc(pxOf(last.x),pyOf(last.y),cell*0.09,0,Math.PI*2); st.fill();
   }
@@ -1515,9 +1568,9 @@ function rootSearch(depth,me,Kroot,restrict){
   return {move:bestMove,val:best,vals:rootVals};
 }
 var LEVELS={
-  legend:{timeMs:2200,Kroot:16,K1:14,Kd:10,maxDepth:10,vcfTime:300,vcfDepth:28,vcfBreadth:12,defVcf:true,vct:true,vctTime:400,vctDepth:14,diversity:true},
-  dao:{timeMs:4500,Kroot:22,K1:18,Kd:13,maxDepth:14,vcfTime:500,vcfDepth:38,vcfBreadth:14,defVcf:true,vct:true,vctTime:600,vctDepth:16,diversity:true},
-  immortal:{timeMs:8000,Kroot:26,K1:22,Kd:18,maxDepth:24,vcfTime:1200,vcfDepth:60,vcfBreadth:18,defVcf:true,vct:true,vctTime:900,vctDepth:18,diversity:true}
+  legend:{timeMs:3000,Kroot:16,K1:14,Kd:10,maxDepth:12,vcfTime:400,vcfDepth:32,vcfBreadth:12,defVcf:true,vct:true,vctTime:500,vctDepth:16,diversity:true},
+  dao:{timeMs:6000,Kroot:24,K1:18,Kd:14,maxDepth:18,vcfTime:600,vcfDepth:44,vcfBreadth:14,defVcf:true,vct:true,vctTime:800,vctDepth:18,diversity:true},
+  immortal:{timeMs:10000,Kroot:30,K1:24,Kd:20,maxDepth:32,vcfTime:1500,vcfDepth:72,vcfBreadth:20,defVcf:true,vct:true,vctTime:1200,vctDepth:20,diversity:true}
 };
 function defendVcf(me,opp,dl){
   // 防守点分级：①对方成五点(必堵) ②对方活四/双四成形点(抢先占据) ③已成形四的堵点 ④热点兜底；
@@ -1563,6 +1616,72 @@ function defendVcf(me,opp,dl){
   }
   return best;
 }
+/* 开局定式库：学习自职业定式研究——花月/浦月/寒星/疏星（黑必胜开局）与白方最强贴防点；
+   仅 15 路盘、总子数≤4 时生效，无匹配返回 -1 交给主搜索 */
+function bookMove(me){
+  if(BS!==15)return -1;
+  var bs=[],ws=[],i;
+  for(i=0;i<225;i++){if(board[i]===1)bs.push(i);else if(board[i]===2)ws.push(i);}
+  if(bs.length+ws.length>4)return -1;
+  var C=112,P88=128,P66=96,P87=127,P78=113,P96=144,P86=134,P97=145,P99=148;
+  var P79=124,P89=139,P68=111,P67=102,P710=130,P98=147,P810=143,P57=87;
+  function emp(x){return board[x]===0;}
+  function firstEmpty(list){for(var k=0;k<list.length;k++)if(emp(list[k]))return list[k];return -1;}
+  if(me===1){
+    if(bs.length===0&&ws.length===0)return C;
+    if(bs.length===1&&bs[0]===C&&ws.length===1){
+      // 黑3：花月斜指（最强开局）；被占则走对面斜点
+      if(emp(P88))return P88;
+      if(emp(P66))return P66;
+      return -1;
+    }
+    if(bs.length===2&&ws.length===2){
+      var hasC=bs.indexOf(C)>=0;
+      if(hasC&&bs.indexOf(P88)>=0){
+        // 花月定式表：白4防 I8 → 黑胜点 G7/I7/J7；白4防 J7 → 黑胜点 G7/I7/I8
+        if(ws.indexOf(P87)>=0)return firstEmpty([P66,P86,P96]);
+        if(ws.indexOf(P96)>=0)return firstEmpty([P66,P86,P87]);
+        return firstEmpty([P99,P66]);
+      }
+      if(hasC&&bs.indexOf(P66)>=0){
+        if(ws.indexOf(P78)>=0)return firstEmpty([P88,P87,P97]);
+        return firstEmpty([P88,P78]);
+      }
+      if(hasC&&bs.indexOf(P87)>=0){
+        // 浦月：直线延伸
+        return firstEmpty([P97,P67]);
+      }
+      if(hasC&&bs.indexOf(P79)>=0){
+        // 寒星定式表
+        if(ws.indexOf(P89)>=0)return firstEmpty([P67,P68,P88]);
+        if(ws.indexOf(P99)>=0)return firstEmpty([P57,P68]);
+        if(ws.indexOf(P710)>=0)return firstEmpty([P66,P88]);
+        if(ws.indexOf(P98)>=0)return firstEmpty([P57,P68,P88]);
+        return firstEmpty([P88]);
+      }
+      if(hasC&&bs.indexOf(P99)>=0){
+        // 疏星定式表
+        if(ws.indexOf(P87)>=0)return firstEmpty([P88,P96,P98]);
+        if(ws.indexOf(P66)>=0)return firstEmpty([P88,P810]);
+        if(ws.indexOf(P67)>=0)return firstEmpty([P88,P89]);
+        return firstEmpty([P88]);
+      }
+      return -1;
+    }
+  }else{
+    // 白方定式：占斜点破花月 / 花月最强防点 I8、J7 / 浦月挡延伸
+    if(bs.length===1&&ws.length===0){
+      return bs[0]===C?(emp(P88)?P88:P87):-1;
+    }
+    if(bs.length===2&&ws.length===1){
+      if(bs.indexOf(C)>=0&&bs.indexOf(P88)>=0)return firstEmpty([P87,P96]);
+      if(bs.indexOf(C)>=0&&bs.indexOf(P66)>=0)return firstEmpty([P78,P97]);
+      if(bs.indexOf(C)>=0&&bs.indexOf(P87)>=0)return firstEmpty([P97,P67]);
+      return -1;
+    }
+  }
+  return -1;
+}
 function computeBest(msg){
   var me=msg.me,opp=3-me,i,idx;
   var size=msg.size||15;
@@ -1578,6 +1697,11 @@ function computeBest(msg){
   var Kroot=budget<2000?Math.min(cfg.Kroot,14):cfg.Kroot;
   load(msg.board);
   nodes=0;vctNodes=0;killers.length=0;
+  // 开局定式库：弈神/弈道/弈仙 在开局前几手直接走职业定式（快、准、强）
+  if(msg.level==='legend'||msg.level==='dao'||msg.level==='immortal'){
+    var bm=bookMove(me);
+    if(bm>=0)return bm;
+  }
   var cands=candidateList();
   // 直接成五
   for(i=0;i<cands.length;i++){idx=cands[i];make(idx,me);var w=fiveAt(idx,me);unmake(idx,me);if(w)return idx;}
@@ -1728,7 +1852,7 @@ function workerReset(){
 function requestAiMove(level,cb){
   var n=N*N, boardArr=new Array(n),i;
   for(i=0;i<n;i++)boardArr[i]=state.board[i];
-  var timeMs=level==='immortal'?8000:(level==='dao'?4500:2200);
+  var timeMs=level==='immortal'?10000:(level==='dao'?6000:3000);
   if(aiWorker){
     pendingCb=cb;
     try{aiWorker.postMessage({type:'think',seq:aiSeq,board:boardArr,me:aiColor(),level:level,timeMs:timeMs,size:N});}
@@ -1740,6 +1864,22 @@ function requestAiMove(level,cb){
   if(idx===undefined||idx===null||idx<0)idx=aiChooseMove(aiColor());
   var seq=aiSeq;
   setTimeout(function(){cb(idx,seq);},30);
+}
+/* 识别开局定式名称：按黑第二手相对天元的形状映射（斜桂打=花月 / 直连打=浦月 / 斜间打=疏星 / 直间打=寒星） */
+function identifyJoseki(){
+  if(N!==15||state.history.length<3) return '';
+  var c=(N/2)|0, found=null, i;
+  for(i=0;i<state.history.length;i++){
+    var m=state.history[i];
+    if(m.color===BLACK&&!(m.x===c&&m.y===c)){ found=m; break; }
+  }
+  if(!found) return '';
+  var ax=Math.abs(found.x-c), ay=Math.abs(found.y-c);
+  if(ax===1&&ay===1) return '花月';
+  if(ax+ay===1) return '浦月';
+  if(ax===2&&ay===2) return '疏星';
+  if(ax+ay===2&&(ax===0||ay===0)) return '寒星';
+  return '';
 }
 function scheduleAi(){
   state.aiThinking=true; updateHud();
@@ -1754,6 +1894,10 @@ function scheduleAi(){
         if(rseq!==aiSeq||state.over){state.aiThinking=false;updateHud();return;}
         state.aiThinking=false;
         commitMove(idx%N,Math.floor(idx/N),aiColor());
+        if(state.mode==='ai'&&state.moveCount<=5&&state.moveCount>=3){
+          var jn=identifyJoseki();
+          if(jn)showToast('开局定式 · '+jn);
+        }
       },pad);
     });
     return;
@@ -1943,6 +2087,10 @@ function showResult(){
   if(state.mode==='pvp') s='双人战绩　黑 '+state.scores.pvp.black+' · 白 '+state.scores.pvp.white+' · 和 '+state.scores.pvp.draw;
   else if(state.mode==='ai') s='人机战绩　胜 '+state.scores.ai.win+' · 负 '+state.scores.ai.lose+' · 和 '+state.scores.ai.draw;
   else s='联机战绩　胜 '+state.scores.net.win+' · 负 '+state.scores.net.lose+' · 和 '+state.scores.net.draw;
+  if(gameStartTs){
+    var sec=Math.max(0,Math.floor((Date.now()-gameStartTs)/1000));
+    s+='　本局用时 '+Math.floor(sec/60)+':'+(sec%60<10?'0':'')+(sec%60);
+  }
   $('resultScore').textContent=s;
   var o=$('resultOverlay');
   o.classList.remove('hidden');
@@ -2021,6 +2169,20 @@ function buildAccGrid(){
       state.accent=id; saveSettings(); applyAccent(); sTap(); vibrate(8);
     });
     g.appendChild(b);
+  });
+}
+/* ================= 明暗皮肤 ================= */
+function applySkin(){
+  document.documentElement.setAttribute('data-skin',state.skin);
+  refreshAcc();
+  document.querySelectorAll('#skinSeg button').forEach(function(b){ b.classList.toggle('sel',b.dataset.skin===state.skin); });
+}
+function bindSkinSeg(){
+  document.querySelectorAll('#skinSeg button').forEach(function(b){
+    b.addEventListener('click',function(){
+      if(state.skin===b.dataset.skin) return;
+      state.skin=b.dataset.skin; saveSettings(); applySkin(); applyAccent(); sTap(); vibrate(8);
+    });
   });
 }
 
@@ -2559,6 +2721,13 @@ function bindEvents(){
   $('themeBtn').addEventListener('click',openThemeSheet);
   $('themeClose').addEventListener('click',closeThemeSheet);
   $('themeSheet').addEventListener('click',function(e){ if(e.target===this) closeThemeSheet(); });
+  $('moveNoBtn').addEventListener('click',function(){
+    showMoveNo=!showMoveNo;
+    saveSettings();
+    renderStones(); drawFxStatic();
+    sTap(); vibrate(8);
+    showToast(showMoveNo?'已显示手数编号':'已隐藏手数编号');
+  });
   $('againBtn').addEventListener('click',function(){
     sTap(); vibrate(10);
     if(state.mode==='online'){
@@ -2655,6 +2824,7 @@ function refreshModeUI(){
     b.classList.toggle('sel',b.dataset.side===state.side);
   });
   $('diffBlock').classList.toggle('off',state.mode!=='ai');
+  document.querySelectorAll('#skinSeg button').forEach(function(b){ b.classList.toggle('sel',b.dataset.skin===state.skin); });
 }
 
 /* ================= 初始化 ================= */
@@ -2662,12 +2832,14 @@ loadSettings(); loadScores();
 buildSwatches($('themeGridHome'));
 buildSwatches($('themeGridSheet'));
 buildAccGrid();
+applySkin();
 applyAccent();
 applyTheme();
 refreshModeUI();
 renderSoundBtns();
 updateStats();
 bindEvents();
+bindSkinSeg();
 showScreen('home');
 setInterval(function(){
   var el=$('timeLabel'); if(!el) return;
