@@ -1340,7 +1340,50 @@ function vcf(color,depth,dl){
   }
   return -1;
 }
-var nodes=0,deadline=0,K1=10,Kd=8;
+/* 防守点：穿过 idx 的 3子+2空 五连窗内的空点（对方需抢占的三防点） */
+/* VCT：冲四+活三 连续威胁取胜搜索（比 VCF 覆盖更广的组合杀） */
+var vctNodes=0;
+function vct(color,depth,dl){
+  if(depth<=0||Date.now()>dl||vctNodes>120000)return -1;
+  var oc=3-color,cc=candidateList(),q;
+  for(q=0;q<cc.length;q++){var cq=cc[q];board[cq]=oc;var f5=fiveAt(cq,oc);board[cq]=0;if(f5)return -1;}
+  var i,threats=[];
+  vctNodes+=cc.length;
+  for(i=0;i<cc.length;i++){
+    var idx=cc[i],ot0=totOT[color-1];
+    make(idx,color);
+    var isF=fiveAt(idx,color)||winPoints(idx,color).length>0;
+    var isT=totOT[color-1]>ot0;
+    unmake(idx,color);
+    if(isF||isT)threats.push(idx);
+  }
+  var arr=new Array(threats.length);
+  for(i=0;i<threats.length;i++)arr[i]=[threats[i],orderGain(threats[i],color)];
+  arr.sort(function(a,b){return b[1]-a[1];});
+  var lim=Math.min(arr.length,vcfBreadth);
+  for(i=0;i<lim;i++){
+    vctNodes++;
+    if(Date.now()>dl||vctNodes>120000)return -1;
+    var m=arr[i][0],ret=-1;
+    make(m,color);
+    if(fiveAt(m,color))ret=m;
+    else{
+      var wps=winPoints(m,color);
+      if(wps.length>=2)ret=m;
+      else if(wps.length===1){
+        var block=wps[0];
+        make(block,oc);
+        if(!fiveAt(block,oc)){if(vct(color,depth-2,dl)>=0)ret=m;}
+        unmake(block,oc);
+      }
+    }
+    unmake(m,color);
+    if(ret>=0)return ret;
+  }
+  return -1;
+}
+var nodes=0,deadline=0,K1=10,Kd=8,ext3On=false;
+var killers=[];
 function K(ply){return ply<=2?K1:Kd;}
 function negamax(depth,alpha,beta,color,ply,extUsed){
   if((++nodes&511)===0&&Date.now()>deadline)throw ABORT;
@@ -1357,14 +1400,19 @@ function negamax(depth,alpha,beta,color,ply,extUsed){
   var moves=genMoves(color,K(ply));
   if(!moves.length)return 0;
   if(ttMove>=0){var bi=moves.indexOf(ttMove);if(bi>0){moves.splice(bi,1);moves.unshift(ttMove);}}
-  var best=-Infinity,bestMove=-1,oc=3-color;
+  else if(ply<16&&killers[ply]&&killers[ply][0]>=0){
+    var k0=killers[ply][0],k1=killers[ply][1],ki=moves.indexOf(k0);
+    if(ki>0){moves.splice(ki,1);moves.unshift(k0);}
+    if(k1>=0){var kj=moves.indexOf(k1);if(kj>0){moves.splice(kj,1);moves.splice(Math.min(1,moves.length),0,k1);}}
+  }
+  var best=-Infinity,bestMove=-1,oc=3-color,baseOT0=totOT[color-1];
   for(var i=0;i<moves.length;i++){
     var m=moves[i];
     make(m,color);
     var v;
     if(fiveAt(m,color))v=WINV-ply;
     else{
-      var ext=(extUsed<10&&winPoints(m,color).length>=1)?1:0;
+      var ext=(extUsed<10&&(winPoints(m,color).length>=1||(ext3On&&totOT[color-1]>baseOT0)))?1:0;
       if(i===0)v=-negamax(depth-1+ext,-beta,-alpha,oc,ply+1,extUsed+ext);
       else{
         v=-negamax(depth-1+ext,-alpha-1,-alpha,oc,ply+1,extUsed+ext);
@@ -1374,7 +1422,11 @@ function negamax(depth,alpha,beta,color,ply,extUsed){
     unmake(m,color);
     if(v>best){best=v;bestMove=m;}
     if(v>alpha)alpha=v;
-    if(alpha>=beta){hist[(color-1)*MAXBS*MAXBS+m]+=depth*depth;break;}
+    if(alpha>=beta){
+      hist[(color-1)*MAXBS*MAXBS+m]+=depth*depth;
+      if(ply<16){var kk=killers[ply];if(!kk){killers[ply]=kk=[-1,-1];}if(kk[0]!==m){kk[1]=kk[0];kk[0]=m;}}
+      break;
+    }
   }
   var flag=best<=alphaOrig?2:(best>=beta?1:0);
   if(tt.size>300000)tt.clear();
@@ -1397,7 +1449,7 @@ function rootSearch(depth,me,Kroot,restrict){
   }
   var e=tt.get(hash);
   if(e&&e.best>=0){var bi=moves.indexOf(e.best);if(bi>0){moves.splice(bi,1);moves.unshift(e.best);}}
-  var best=-Infinity,bestMove=-1,alpha=-WINV-1,beta=WINV+1;
+  var best=-Infinity,bestMove=-1,alpha=-WINV-1,beta=WINV+1,rootVals=[];
   for(var i=0;i<moves.length;i++){
     var m=moves[i];
     make(m,me);
@@ -1409,33 +1461,53 @@ function rootSearch(depth,me,Kroot,restrict){
       if(v>alpha&&v<beta)v=-negamax(depth-1,-beta,-alpha,3-me,1,0);
     }
     unmake(m,me);
+    rootVals.push([m,v]);
     if(v>best){best=v;bestMove=m;}
     if(v>alpha)alpha=v;
   }
   if(bestMove>=0)hist[(me-1)*MAXBS*MAXBS+bestMove]+=depth*depth*2;
-  return {move:bestMove,val:best};
+  return {move:bestMove,val:best,vals:rootVals};
 }
 var LEVELS={
-  legend:{timeMs:2000,Kroot:16,K1:14,Kd:10,maxDepth:8,vcfTime:300,vcfDepth:24,vcfBreadth:12,defVcf:true},
-  dao:{timeMs:3500,Kroot:22,K1:18,Kd:13,maxDepth:12,vcfTime:500,vcfDepth:32,vcfBreadth:14,defVcf:true},
-  immortal:{timeMs:6000,Kroot:26,K1:22,Kd:16,maxDepth:18,vcfTime:1200,vcfDepth:50,vcfBreadth:18,defVcf:true}
+  legend:{timeMs:2000,Kroot:16,K1:14,Kd:10,maxDepth:8,vcfTime:300,vcfDepth:24,vcfBreadth:12,defVcf:true,vct:true,vctTime:400,vctDepth:14,diversity:true},
+  dao:{timeMs:3500,Kroot:22,K1:18,Kd:13,maxDepth:12,vcfTime:500,vcfDepth:32,vcfBreadth:14,defVcf:true,vct:true,vctTime:600,vctDepth:16,diversity:true},
+  immortal:{timeMs:6000,Kroot:26,K1:22,Kd:16,maxDepth:18,vcfTime:1200,vcfDepth:50,vcfBreadth:18,defVcf:true,vct:true,vctTime:900,vctDepth:18,diversity:true}
 };
 function defendVcf(me,opp,dl){
+  // 防守点分级：①对方成五点(必堵) ②对方活四/双四成形点(抢先占据) ③已成形四的堵点 ④热点兜底；
+  // 每步安检限时，避免单点耗尽预算
   var cands=genMoves(me,20);
-  var best=-1,bestVal=-Infinity;
-  for(var i=0;i<cands.length;i++){
+  var fivePts=[],shapePts=[],blockPts=[],oppCands=candidateList(),i,j;
+  for(i=0;i<oppCands.length;i++){
+    var q=oppCands[i];
+    make(q,opp);
+    var fw=fiveAt(q,opp);
+    var wps=fw?[]:winPoints(q,opp);
+    unmake(q,opp);
+    if(fw){if(fivePts.indexOf(q)<0)fivePts.push(q);}
+    else if(wps.length>=2){if(shapePts.indexOf(q)<0)shapePts.push(q);}
+    else if(wps.length===1){if(board[wps[0]]===0&&blockPts.indexOf(wps[0])<0)blockPts.push(wps[0]);}
+  }
+  var ordered=[];
+  for(i=0;i<fivePts.length;i++)ordered.push(fivePts[i]);
+  for(i=0;i<shapePts.length;i++)ordered.push(shapePts[i]);
+  for(i=0;i<blockPts.length;i++)ordered.push(blockPts[i]);
+  for(i=0;i<cands.length;i++)if(ordered.indexOf(cands[i])<0)ordered.push(cands[i]);
+  var best=-1,bestVal=-Infinity,checked=0;
+  for(i=0;i<ordered.length&&checked<12;i++){
     if(Date.now()>dl)break;
-    var m=cands[i];
+    var m=ordered[i];
+    checked++;
     make(m,me);
     var safe=fiveAt(m,me);
-    if(!safe&&vcf(opp,12,dl)<0){
+    if(!safe&&vcf(opp,12,Math.min(dl,Date.now()+180))<0){
       safe=true;
       var cc=candidateList();
-      for(var j=0;j<cc.length;j++){
-        var q=cc[j];
-        make(q,opp);
-        var bad=totOF[opp-1]>=1||winPoints(q,opp).length>=2;
-        unmake(q,opp);
+      for(j=0;j<cc.length;j++){
+        var qq=cc[j];
+        make(qq,opp);
+        var bad=totOF[opp-1]>=1||winPoints(qq,opp).length>=2;
+        unmake(qq,opp);
         if(bad){safe=false;break;}
       }
     }
@@ -1456,9 +1528,10 @@ function computeBest(msg){
   if(budget<2000){K1=Math.min(cfg.K1,12);Kd=Math.min(cfg.Kd,8);}
   else{K1=cfg.K1;Kd=cfg.Kd;}
   vcfBreadth=cfg.vcfBreadth;
+  ext3On=budget>=2000;
   var Kroot=budget<2000?Math.min(cfg.Kroot,14):cfg.Kroot;
   load(msg.board);
-  nodes=0;
+  nodes=0;vctNodes=0;killers.length=0;
   var cands=candidateList();
   // 直接成五
   for(i=0;i<cands.length;i++){idx=cands[i];make(idx,me);var w=fiveAt(idx,me);unmake(idx,me);if(w)return idx;}
@@ -1471,9 +1544,15 @@ function computeBest(msg){
     for(i=0;i<blocks.length;i++){make(blocks[i],me);var bv2=evaluate(me);unmake(blocks[i],me);if(bv2>bv){bv=bv2;bb=blocks[i];}}
     return bb;
   }
-  // 己方连冲（VCF）杀
-  var vm=vcf(me,cfg.vcfDepth,t0+cfg.vcfTime);
+  // 己方连冲（VCF）杀；所有战术预检共享预算上限（总预算35%），保证主搜索有充足时间
+  var ppEnd=t0+Math.min(1500,Math.floor(budget*0.35));
+  var vm=vcf(me,cfg.vcfDepth,ppEnd);
   if(vm>=0)return vm;
+  // 己方组合威胁（VCT：冲四+活三连环）杀
+  if(cfg.vct&&Date.now()<ppEnd-50){
+    var vt=vct(me,cfg.vctDepth,ppEnd);
+    if(vt>=0)return vt;
+  }
   // 造活四 / 双四：无解之着，直接下
   for(i=0;i<cands.length;i++){
     idx=cands[i];
@@ -1482,11 +1561,11 @@ function computeBest(msg){
     unmake(idx,me);
     if(myOF||myDbl)return idx;
   }
-  // 对方连冲杀防守
+  // 对方连冲杀防守（预算占比收紧，保证主搜索有充足时间）
   if(cfg.defVcf){
-    var ov=vcf(opp,cfg.vcfDepth,t0+Math.min(900,cfg.vcfTime));
+    var ov=vcf(opp,cfg.vcfDepth,ppEnd);
     if(ov>=0){
-      var dm=defendVcf(me,opp,t0+Math.min(1500,(cfg.timeMs/2)|0));
+      var dm=defendVcf(me,opp,Math.min(deadline-200,Date.now()+Math.floor(budget*0.25)));
       if(dm>=0)return dm;
     }
   }
@@ -1509,15 +1588,46 @@ function computeBest(msg){
     }
   }
   // 迭代加深主搜索
-  var bestMove=-1;
+  var bestMove=-1,lastVals=null,lastDepth=0;
   for(var d=2;d<=cfg.maxDepth;d+=2){
     try{
       var r=rootSearch(d,me,Kroot,restrict);
-      if(r.move>=0)bestMove=r.move;
+      if(r.move>=0){bestMove=r.move;lastVals=r.vals;lastDepth=d;}
     }catch(ex){break;}
     if(Date.now()>deadline)break;
   }
-  if(bestMove<0){var g=genMoves(me,1);bestMove=g.length?g[0]:centerIdx();}
+  // 去模板化择优：仅在开局/早中盘（盘面子数≤24）、完成足够深度搜索、局面真正均衡（|最优值|≤15000）时，
+  // 从「搜索值与最优相差≤1500」的前2个近优着法中按造势价值加权随机挑选，打破固定套路；
+  // 中后盘/防守/杀着/败势局面一律走纯搜索最优，绝不牺牲正确性
+  var stoneCnt=0;for(i=0;i<BS*BS;i++)if(board[i])stoneCnt++;
+  if(cfg.diversity&&budget>=2000&&lastVals&&lastVals.length>1&&lastDepth>=4&&stoneCnt<=24){
+    var topV=-Infinity,ri2;
+    for(ri2=0;ri2<lastVals.length;ri2++)if(lastVals[ri2][1]>topV)topV=lastVals[ri2][1];
+    if(Math.abs(topV)<=15000){
+      var pool2=[],otBase=totOT[me-1];
+      for(ri2=0;ri2<lastVals.length;ri2++){
+        var rv=lastVals[ri2];
+        if(topV-rv[1]>1500)continue;
+        make(rv[0],me);
+        var mkOT=totOT[me-1]-otBase,mkF=winPoints(rv[0],me).length>=1;
+        unmake(rv[0],me);
+        pool2.push([rv[0],rv[1],rv[1]+mkOT*900+(mkF?600:0)]);
+      }
+      pool2.sort(function(a,b){return b[2]-a[2];});
+      if(pool2.length>2)pool2.length=2;
+      if(pool2.length>1){
+        var wsum=0,ws=new Array(pool2.length),ri3;
+        for(ri3=0;ri3<pool2.length;ri3++){ws[ri3]=Math.pow(0.55,ri3);wsum+=ws[ri3];}
+        var wm2=Math.random()*wsum,acc2=0,pick=pool2[0][0];
+        for(ri3=0;ri3<pool2.length;ri3++){acc2+=ws[ri3];if(wm2<acc2){pick=pool2[ri3][0];break;}}
+        bestMove=pick;
+      }
+    }
+  }
+  if(bestMove<0){
+    if(restrict&&restrict.length)bestMove=restrict[0];
+    else{var g=genMoves(me,1);bestMove=g.length?g[0]:centerIdx();}
+  }
   return bestMove;
 }
 self.onmessage=function(e){
